@@ -16,6 +16,9 @@ interface WorkerDeps {
   // Called when the worker actually deposits cargo at the dropoff. Returns
   // how much was accepted (resource cap may clip it).
   depositWood: (amount: number) => number;
+  // Find another tree to chain to once the assigned one is stumped. May
+  // return null when nothing is available.
+  findNearestTree: (fromX: number, fromY: number) => Tree | null;
 }
 
 type State =
@@ -25,29 +28,37 @@ type State =
   | { kind: 'moving-to-dropoff'; afterTree: Tree | null }
   | { kind: 'depositing' };
 
-const SELECTED_OUTLINE_COLOR = 0xffff66;
-const NORMAL_OUTLINE_COLOR = 0x222222;
+const CARRY_TINT = 0xc8ffb0;
 
 export class Worker {
   readonly id: number;
   private deps: WorkerDeps;
-  private sprite: Phaser.GameObjects.Rectangle;
+  private sprite: Phaser.GameObjects.Sprite;
+  private ring: Phaser.GameObjects.Sprite;
   private state: State = { kind: 'idle' };
   private inventoryWood = 0;
-  // Path is a list of *world-pixel-center* waypoints to walk through.
   private path: { x: number; y: number }[] = [];
   private _selected = false;
+  // Once the player gives a worker any tree, it keeps gathering nearby
+  // trees after each drop-off. Cleared only when nothing is available.
+  private autoGather = false;
 
   constructor(id: number, scene: Phaser.Scene, tileX: number, tileY: number, deps: WorkerDeps) {
     this.id = id;
     this.deps = deps;
     const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
     const wy = tileY * TILE_SIZE + TILE_SIZE / 2;
+
+    this.ring = scene.add
+      .sprite(wx, wy + 6, 'select-ring')
+      .setDepth(19)
+      .setVisible(false);
+
     this.sprite = scene.add
-      .rectangle(wx, wy, 14, 18, 0xf0c070)
-      .setStrokeStyle(2, NORMAL_OUTLINE_COLOR)
+      .sprite(wx, wy, 'worker')
+      .setOrigin(0.5, 0.9)
       .setDepth(20)
-      .setInteractive();
+      .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'worker').setData('worker', this);
   }
 
@@ -73,12 +84,17 @@ export class Worker {
 
   setSelected(value: boolean): void {
     this._selected = value;
-    this.sprite.setStrokeStyle(2, value ? SELECTED_OUTLINE_COLOR : NORMAL_OUTLINE_COLOR);
+    this.ring.setVisible(value);
   }
 
-  // Player command: gather from this tree, then drop off, then loop back.
+  // Player command: gather from this tree, then drop off, then auto-continue
+  // to nearby trees until told otherwise (or none remain).
   assignTree(tree: Tree): void {
-    if (!tree.isAvailable) return;
+    this.autoGather = true;
+    if (!tree.isAvailable) {
+      this.chainToNearest();
+      return;
+    }
     if (this.inventoryWood > 0) {
       // Already carrying: deliver first, then come back to this tree.
       this.startMoveToDropoff(tree);
@@ -113,7 +129,29 @@ export class Worker {
     );
   }
 
+  private chainToNearest(): void {
+    if (!this.autoGather) {
+      this.state = { kind: 'idle' };
+      return;
+    }
+    const next = this.deps.findNearestTree(this.sprite.x, this.sprite.y);
+    if (next) {
+      this.startMoveToTree(next);
+    } else {
+      this.autoGather = false;
+      this.state = { kind: 'idle' };
+    }
+  }
+
   update(dtSec: number): void {
+    // Keep ring under the worker's feet and depth-sorted with body so trees
+    // overlap correctly as the worker walks past them.
+    if (this._selected) {
+      this.ring.setPosition(this.sprite.x, this.sprite.y + 4);
+    }
+    this.sprite.setDepth(this.sprite.y);
+    this.ring.setDepth(this.sprite.y - 1);
+
     switch (this.state.kind) {
       case 'idle':
         return;
@@ -129,8 +167,7 @@ export class Worker {
           const tree = this.state.tree;
           const yield_ = tree.harvest();
           this.inventoryWood += yield_;
-          // Visual cue: tint sprite slightly while carrying.
-          this.sprite.setFillStyle(0xa0d060);
+          this.sprite.setTint(CARRY_TINT);
           this.startMoveToDropoff(null);
         }
         return;
@@ -169,8 +206,7 @@ export class Worker {
     if (this.state.kind === 'moving-to-tree') {
       const tree = this.state.tree;
       if (!tree.isAvailable) {
-        // Someone else got it / it stumped while we walked.
-        this.state = { kind: 'idle' };
+        this.chainToNearest();
         return;
       }
       this.state = {
@@ -186,19 +222,22 @@ export class Worker {
       this.state = { kind: 'depositing' };
       const accepted = this.deps.depositWood(this.inventoryWood);
       this.inventoryWood = Math.max(0, this.inventoryWood - accepted);
-      // Drop visual carry tint.
-      this.sprite.setFillStyle(0xf0c070);
-      // If we still have an assigned tree and capacity, go back.
+      this.sprite.clearTint();
+
       if (afterTree && afterTree.isAvailable && this.inventoryWood === 0) {
         this.startMoveToTree(afterTree);
       } else {
-        this.state = { kind: 'idle' };
+        // Either the assigned tree is gone or we still have unflushed wood
+        // (storage cap). Either way: try to chain. If cap was hit, this just
+        // sends us back out; the next deposit will be 0 and we'll keep trying.
+        this.chainToNearest();
       }
     }
   }
 
   destroy(): void {
     this.sprite.destroy();
+    this.ring.destroy();
   }
 }
 

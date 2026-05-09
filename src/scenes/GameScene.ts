@@ -82,14 +82,12 @@ export class GameScene extends Phaser.Scene {
     const sizePx = th.sizeTiles * TILE_SIZE;
     const cx = th.tileX * TILE_SIZE + sizePx / 2;
     const cy = th.tileY * TILE_SIZE + sizePx / 2;
+    // Origin at base so the roof rises above the footprint and the bottom
+    // sits exactly on the south edge of the 3×3 tile area.
     this.add
-      .rectangle(cx, cy, sizePx - 4, sizePx - 4, 0xc94c2a)
-      .setStrokeStyle(3, 0x5c1f0e)
-      .setDepth(15);
-    // Small "door" indicator on the south face so workers visibly walk to it.
-    this.add
-      .rectangle(cx, cy + sizePx / 2 - 6, 14, 8, 0x5c1f0e)
-      .setDepth(16);
+      .sprite(cx, cy + sizePx / 2, 'town-hall')
+      .setOrigin(0.5, 1)
+      .setDepth(cy + sizePx / 2);
   }
 
   private spawnTrees(): void {
@@ -129,6 +127,7 @@ export class GameScene extends Phaser.Scene {
       isWalkable: this.isWalkable.bind(this),
       getDropoffTile: this.getDropoffTile.bind(this),
       depositWood: this.depositWood.bind(this),
+      findNearestTree: this.findNearestTree.bind(this),
     };
     for (let i = 0; i < BALANCE.startingWorkers; i++) {
       this.workers.push(new Worker(i, this, spawnTiles[i].tx, spawnTiles[i].ty, deps));
@@ -146,6 +145,22 @@ export class GameScene extends Phaser.Scene {
   private getDropoffTile(): TileXY {
     const th = BALANCE.townHall;
     return { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles };
+  }
+
+  private findNearestTree(fromX: number, fromY: number): Tree | null {
+    let best: Tree | null = null;
+    let bestDistSq = Infinity;
+    for (const t of this.trees) {
+      if (!t.isAvailable) continue;
+      const dx = t.worldX - fromX;
+      const dy = t.worldY - fromY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < bestDistSq) {
+        best = t;
+        bestDistSq = distSq;
+      }
+    }
+    return best;
   }
 
   private depositWood(amount: number): number {
