@@ -205,12 +205,18 @@ export class UIScene extends Phaser.Scene {
 
   private closeDrawer(): void {
     if (!this.drawer) return;
+    this.dismissDrawer();
+    // Manual close (× button or BUILD-toggle): cancel any in-flight placement.
+    this.events.emit('build-cancel');
+  }
+
+  // Quiet drawer teardown for when the user picked a card. closeDrawer's
+  // build-cancel emit would race-destroy the placement we just created.
+  private dismissDrawer(): void {
+    if (!this.drawer) return;
     this.drawer.destroy();
     this.drawer = null;
     this.cards = [];
-    // Make sure any in-flight placement is cancelled when the drawer is
-    // dismissed without a pick.
-    this.events.emit('build-cancel');
   }
 
   private makeCard(id: BuildingId, x: number, y: number): BuildCard {
@@ -241,7 +247,9 @@ export class UIScene extends Phaser.Scene {
     panel.on(Phaser.Input.Events.POINTER_UP, () => {
       if (panel.getData('locked')) return;
       this.events.emit('build-card-selected', id);
-      this.closeDrawer();
+      // dismissDrawer (NOT closeDrawer) so we don't emit build-cancel and
+      // immediately tear down the placement we just created.
+      this.dismissDrawer();
     });
 
     return card;
