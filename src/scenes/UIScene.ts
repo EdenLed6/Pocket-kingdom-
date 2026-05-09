@@ -19,6 +19,8 @@ interface ResourceLine {
   text: Phaser.GameObjects.Text;
 }
 
+const HUD_KEYS = new Set(['wood', 'woodCap', 'stone', 'stoneCap', 'food', 'foodCap', 'pop', 'popCap']);
+
 interface BuildCard {
   id: BuildingId;
   panel: Phaser.GameObjects.Rectangle;
@@ -49,6 +51,7 @@ export class UIScene extends Phaser.Scene {
       { key: 'wood', capKey: 'woodCap', label: 'W' },
       { key: 'stone', capKey: 'stoneCap', label: 'S' },
       { key: 'food', capKey: 'foodCap', label: 'F' },
+      { key: 'pop', capKey: 'popCap', label: 'P' },
     ];
 
     const colWidth = Math.floor(w / defs.length);
@@ -84,9 +87,11 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onRegistryChange(_parent: unknown, key: string): void {
-    for (const line of this.lines) {
-      if (key === line.key || key === line.capKey) {
-        this.refreshLine(line);
+    if (HUD_KEYS.has(key)) {
+      for (const line of this.lines) {
+        if (key === line.key || key === line.capKey) {
+          this.refreshLine(line);
+        }
       }
     }
     if (this.drawer && (key === 'wood' || key === 'stone' || key === 'food' || key === 'builtIds')) {

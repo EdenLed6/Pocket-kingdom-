@@ -98,12 +98,19 @@ export class GameScene extends Phaser.Scene {
     // Tracks which buildings have ever been constructed, for prereq checks.
     this.registry.set('builtIds', new Set<BuildingId>(['town_hall' as BuildingId]));
 
+    // Pop cap starts with the Town Hall's contribution; each completed
+    // House adds +3 (§4.4). Pop count is just the number of living workers.
+    this.registry.set('popCap', 5);
+    this.registry.set('pop', this.workers.length);
+
     this.input.on(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
     this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
     // UIScene's BUILD button emits this through the registry/scene events.
     const ui = this.scene.get('UI');
     ui.events.on('build-card-selected', this.onBuildCardSelected, this);
     ui.events.on('build-cancel', this.cancelPlacement, this);
+    // Register once; per-placement handlers leaked in the 3b draft.
+    this.events.on('building-constructed', this.onBuildingConstructed, this);
   }
 
   update(_time: number, delta: number): void {
@@ -361,18 +368,37 @@ export class GameScene extends Phaser.Scene {
       w.assignSite(b);
       recruited += 1;
     }
-    this.events.once('building-constructed', () => {
-      // Fired by Building.completeConstruction. Mark id as built so prereqs
-      // resolve. We listen each placement so we don't keep stale handlers.
-    });
-    this.events.on('building-constructed', this.onBuildingConstructed, this);
   }
 
   private onBuildingConstructed(b: Building): void {
     const built = this.registry.get('builtIds') as Set<BuildingId>;
     built.add(b.def.id);
-    // Touch the registry key so listeners (if any) fire.
     this.registry.set('builtIds', built);
+
+    switch (b.def.id) {
+      case 'house': {
+        const cap = (this.registry.get('popCap') as number) ?? 0;
+        this.registry.set('popCap', cap + 3);
+        break;
+      }
+      case 'warehouse': {
+        const per = BALANCE.storage.perWarehouse;
+        for (const r of ['wood', 'stone', 'food'] as ResourceType[]) {
+          const cur = (this.registry.get(REGISTRY_CAP_KEY[r]) as number) ?? 0;
+          this.registry.set(REGISTRY_CAP_KEY[r], cur + per[r]);
+        }
+        break;
+      }
+      case 'farm': {
+        // §4.4: 1 food / 5s passive. No worker needed.
+        this.time.addEvent({
+          delay: 5000,
+          loop: true,
+          callback: () => this.deposit('food', 1),
+        });
+        break;
+      }
+    }
   }
 
   // ---------- input -----------------------------------------------------------
