@@ -1,0 +1,23 @@
+{
+  "name": "pocket-kingdom",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.11"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.3",
+    "@capacitor/cli": "^8.3.3",
+    "@capacitor/core": "^8.3.3",
+    "@capacitor/preferences": "^8.0.1",
+    "phaser": "^4.1.0"
+  }
+}
