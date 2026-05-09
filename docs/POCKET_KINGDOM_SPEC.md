@@ -790,6 +790,7 @@ When MVP is solid and you want to keep going:
 - **Achievements.**
 - **Tutorial mode** with guided tasks for the first 5 minutes.
 - **Localization:** Hebrew UI strings (right-to-left support in Phaser is non-trivial — plan accordingly).
+- **Terraforming — water channels.** Workers can dig dirt/grass tiles to open a channel that water spreads through. Player-controlled rivers / moats. Open questions: does water flow automatically once a channel touches existing water, can channels be filled back in, do bandits avoid them, do they count as walls for defence purposes? Resolve before scoping.
 
 ---
 
