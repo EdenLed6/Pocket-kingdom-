@@ -29,10 +29,12 @@ interface BuildCard {
   text: Phaser.GameObjects.Text;
 }
 
-const DRAWER_HEIGHT = 200;
+// 2×5 grid: 9 buildings + 1 empty slot. Sized to fit a 540-wide canvas.
+const DRAWER_HEIGHT = 296;
 const CARD_W = 96;
 const CARD_H = 110;
 const CARD_GAP = 8;
+const CARD_COLS = 5;
 
 export class UIScene extends Phaser.Scene {
   private lines: ResourceLine[] = [];
@@ -281,14 +283,17 @@ export class UIScene extends Phaser.Scene {
     closeBtn.on(Phaser.Input.Events.POINTER_UP, () => this.closeDrawer());
     this.drawer.add(closeBtn);
 
-    // Horizontally scrollable strip — Phase 3 keeps it static and lays cards
-    // in one row; the drawer is wider than the screen so users pan with a
-    // future swipe. For now we lay them out and clip with the drawer rect.
-    const startX = 12;
+    // 2×5 grid centred horizontally so all 9 cards are reachable without
+    // off-screen scrolling.
+    const totalRowWidth = CARD_COLS * CARD_W + (CARD_COLS - 1) * CARD_GAP;
+    const startX = Math.max(8, Math.floor((w - totalRowWidth) / 2));
     const startY = 36;
     BUILDING_ORDER.forEach((id, idx) => {
-      const x = startX + idx * (CARD_W + CARD_GAP);
-      this.cards.push(this.makeCard(id, x, startY));
+      const col = idx % CARD_COLS;
+      const row = Math.floor(idx / CARD_COLS);
+      const x = startX + col * (CARD_W + CARD_GAP);
+      const y = startY + row * (CARD_H + CARD_GAP);
+      this.cards.push(this.makeCard(id, x, y));
     });
 
     this.refreshCards();

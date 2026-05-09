@@ -791,6 +791,8 @@ When MVP is solid and you want to keep going:
 - **Tutorial mode** with guided tasks for the first 5 minutes.
 - **Localization:** Hebrew UI strings (right-to-left support in Phaser is non-trivial — plan accordingly).
 - **Terraforming — water channels.** Workers can dig dirt/grass tiles to open a channel that water spreads through. Player-controlled rivers / moats. Open questions: does water flow automatically once a channel touches existing water, can channels be filled back in, do bandits avoid them, do they count as walls for defence purposes? Resolve before scoping.
+- **Decoration mode — roads.** Toggle that lets the player paint dirt-path tiles over grass to lay roads. Initial implementation shipped in Phase 4 polish; broaden later with more decoration tiles (flowers, fences, banners, lamps).
+- **Farms need irrigation + a worker.** Active spec divergence (vs §4.4 "no worker needed"): farms now require an adjacent water tile at placement and only produce while a worker is tending them. If we keep this, formalise it in §4.4 and adjust the farmer worker-cost so passive food doesn't become free pop-cap pressure.
 
 ---
 

@@ -34,7 +34,9 @@ type State =
   | { kind: 'moving-to-dropoff'; afterNode: ResourceNode | null }
   | { kind: 'depositing' }
   | { kind: 'moving-to-site'; site: Building }
-  | { kind: 'building'; site: Building };
+  | { kind: 'building'; site: Building }
+  | { kind: 'moving-to-farm'; farm: Building }
+  | { kind: 'tending'; farm: Building };
 
 const CARRY_TINT_BY_RESOURCE: Record<ResourceType, number> = {
   wood: 0xc8ffb0,
@@ -126,6 +128,11 @@ export class Worker {
     this.autoMode = 'build';
     this.autoResource = null;
     if (site.isConstructed) {
+      // Already-built farm: treat the assignment as "tend this farm".
+      if (site.def.id === 'farm') {
+        this.assignFarm(site);
+        return;
+      }
       this.chainAfterAssignment();
       return;
     }
@@ -138,9 +145,38 @@ export class Worker {
     this.startMoveToSite(site);
   }
 
+  // Eden's request: farms only produce food while a worker is actively
+  // tending them. Worker walks to the farm and stays there until reassigned.
+  assignFarm(farm: Building): void {
+    this.releaseBuildingSlot();
+    this.autoMode = null;
+    this.autoResource = null;
+    if (this.inventoryAmount > 0) {
+      // Drop cargo first; we'll come back via the autoMode-less chain.
+      this.startMoveToDropoff(null);
+      // Re-target after deposit by re-calling assignFarm.
+      // (We piggyback on currentDropoff arrival via onArrived's idle return,
+      // then user can re-tap.) Simpler: just tend after drop:
+      this.pendingFarmAfterDeposit = farm;
+      return;
+    }
+    this.startMoveToFarm(farm);
+  }
+
+  private pendingFarmAfterDeposit: Building | null = null;
+
+  private startMoveToFarm(farm: Building): void {
+    const path = this.computePath(farm.interactionTile);
+    if (!path) return;
+    this.path = pathToWaypoints(path);
+    this.state = { kind: 'moving-to-farm', farm };
+  }
+
   private releaseBuildingSlot(): void {
     if (this.state.kind === 'building') {
       this.state.site.activeBuilders = Math.max(0, this.state.site.activeBuilders - 1);
+    } else if (this.state.kind === 'tending') {
+      this.state.farm.activeTenders = Math.max(0, this.state.farm.activeTenders - 1);
     }
   }
 
@@ -216,11 +252,13 @@ export class Worker {
     switch (this.state.kind) {
       case 'idle':
       case 'depositing':
+      case 'tending':
         return;
 
       case 'moving-to-node':
       case 'moving-to-dropoff':
       case 'moving-to-site':
+      case 'moving-to-farm':
         this.advanceAlongPath(dtSec);
         return;
 
@@ -309,6 +347,12 @@ export class Worker {
       this.currentDropoff = null;
       this.sprite.clearTint();
 
+      if (this.pendingFarmAfterDeposit && this.inventoryAmount === 0) {
+        const farm = this.pendingFarmAfterDeposit;
+        this.pendingFarmAfterDeposit = null;
+        this.startMoveToFarm(farm);
+        return;
+      }
       if (afterNode && afterNode.isAvailable && this.inventoryAmount === 0) {
         this.startMoveToNode(afterNode);
       } else {
@@ -325,6 +369,13 @@ export class Worker {
       }
       site.activeBuilders += 1;
       this.state = { kind: 'building', site };
+      return;
+    }
+
+    if (this.state.kind === 'moving-to-farm') {
+      const farm = this.state.farm;
+      farm.activeTenders += 1;
+      this.state = { kind: 'tending', farm };
       return;
     }
   }

@@ -528,7 +528,28 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (!this.prereqsMet(id)) return false;
+    // Eden's request: farms must be placed next to water (irrigation).
+    if (id === 'farm' && !this.hasAdjacentWater(tx, ty, def.footprint.w, def.footprint.h)) {
+      return false;
+    }
     return true;
+  }
+
+  private hasAdjacentWater(tx: number, ty: number, w: number, h: number): boolean {
+    // Check all 4-connected tiles around the footprint perimeter.
+    for (let dx = -1; dx <= w; dx++) {
+      for (let dy = -1; dy <= h; dy++) {
+        const inside = dx >= 0 && dx < w && dy >= 0 && dy < h;
+        if (inside) continue;
+        const onCorner = (dx === -1 || dx === w) && (dy === -1 || dy === h);
+        if (onCorner) continue; // 4-connected only
+        const cx = tx + dx;
+        const cy = ty + dy;
+        if (cx < 0 || cy < 0 || cx >= MAP_WIDTH_TILES || cy >= MAP_HEIGHT_TILES) continue;
+        if (this.mapData[cy][cx] === TILE.WATER) return true;
+      }
+    }
+    return false;
   }
 
   private prereqsMet(id: BuildingId): boolean {
@@ -588,13 +609,15 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'farm': {
-        // §4.4: 1 food / 5s passive. No worker needed; goes straight into
-        // the global stockpile (no deposit-bonus building applies).
+        // Eden's spec divergence (logged in §12): farms only produce while
+        // a worker is tending them, instead of the spec's passive flow.
         const farmTile = b.interactionTile;
         this.time.addEvent({
           delay: 5000,
           loop: true,
-          callback: () => this.deposit('food', 1, farmTile),
+          callback: () => {
+            if (b.activeTenders > 0) this.deposit('food', 1, farmTile);
+          },
         });
         break;
       }
@@ -733,9 +756,16 @@ export class GameScene extends Phaser.Scene {
 
     if (kind === 'building') {
       const b = obj.getData('building') as Building;
-      if (this.selectedWorker && !b.isConstructed) {
-        this.selectedWorker.assignSite(b);
-        return;
+      if (this.selectedWorker) {
+        if (!b.isConstructed) {
+          this.selectedWorker.assignSite(b);
+          return;
+        }
+        // Worker + constructed Farm = tend the farm.
+        if (b.def.id === 'farm') {
+          this.selectedWorker.assignFarm(b);
+          return;
+        }
       }
       // Any constructed building opens the unified selection panel.
       if (b.isConstructed) {

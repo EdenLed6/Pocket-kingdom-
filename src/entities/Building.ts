@@ -20,6 +20,10 @@ export class Building {
   // How many workers are currently contributing to this site (cap 3 per
   // §6.3). Mutated by Worker.update.
   activeBuilders = 0;
+  // Workers currently tending this building (Phase 4: only farms use this
+  // — they need a worker assigned to produce food, per Eden's spec
+  // divergence; logged in §12).
+  activeTenders = 0;
   private sprite: Phaser.GameObjects.Sprite;
   private progressBar: Phaser.GameObjects.Graphics;
   private scene: Phaser.Scene;
