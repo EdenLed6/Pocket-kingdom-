@@ -98,10 +98,41 @@ export class UIScene extends Phaser.Scene {
 
     this.events.on('open-building-panel', this.openBuildingPanel, this);
     this.events.on('close-building-panel', this.closeBuildingPanel, this);
+    this.events.on('show-placement-banner', this.showPlacementBanner, this);
+    this.events.on('hide-placement-banner', this.hidePlacementBanner, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onRegistryChange, this);
     });
+  }
+
+  // ---------- placement banner ---------------------------------------------
+
+  private placementBanner: Phaser.GameObjects.Container | null = null;
+
+  private showPlacementBanner(name: string): void {
+    this.hidePlacementBanner();
+    const w = this.scale.width;
+    const c = this.add.container(0, 40).setDepth(1300).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, 32, 0x222230, 0.92).setOrigin(0, 0));
+    c.add(
+      this.add
+        .text(12, 7, `Placing: ${name} — tap to place`, { ...HUD_FONT, fontSize: '15px' })
+        .setOrigin(0, 0),
+    );
+    const cancel = this.add
+      .text(w - 12, 4, '×', { ...HUD_FONT, fontSize: '24px' })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    cancel.on(Phaser.Input.Events.POINTER_UP, () => this.events.emit('build-cancel'));
+    c.add(cancel);
+    this.placementBanner = c;
+  }
+
+  private hidePlacementBanner(): void {
+    if (!this.placementBanner) return;
+    this.placementBanner.destroy();
+    this.placementBanner = null;
   }
 
   // ---------- unified building selection panel ------------------------------

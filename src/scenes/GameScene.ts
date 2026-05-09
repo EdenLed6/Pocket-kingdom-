@@ -454,8 +454,7 @@ export class GameScene extends Phaser.Scene {
       .sprite(0, 0, `b_${id}`)
       .setOrigin(0.5, 1)
       .setAlpha(0.6)
-      .setDepth(10000)
-      .setVisible(false);
+      .setDepth(10000);
     const outline = this.add
       .rectangle(
         0,
@@ -467,9 +466,17 @@ export class GameScene extends Phaser.Scene {
       )
       .setOrigin(0, 0)
       .setDepth(9999)
-      .setStrokeStyle(2, 0x80ff80)
-      .setVisible(false);
+      .setStrokeStyle(2, 0x80ff80);
     this.placement = { id, ghost, outline };
+
+    // Touch UX: there's no MOVE event between two finger taps, so the ghost
+    // would never appear if we waited for it. Snap to the camera centre
+    // immediately so the player sees the preview the moment placement starts.
+    const cam = this.cameras.main;
+    this.updatePlacementPreview(cam.scrollX + cam.width / 2, cam.scrollY + cam.height / 2);
+
+    // Tell UIScene to show a banner: "Placing X — tap to place, × to cancel".
+    this.scene.get('UI').events.emit('show-placement-banner', def.name);
   }
 
   private cancelPlacement(): void {
@@ -477,6 +484,22 @@ export class GameScene extends Phaser.Scene {
     this.placement.ghost.destroy();
     this.placement.outline.destroy();
     this.placement = null;
+    this.scene.get('UI').events.emit('hide-placement-banner');
+  }
+
+  private updatePlacementPreview(worldX: number, worldY: number): void {
+    if (!this.placement) return;
+    const def = BUILDING_DEFS[this.placement.id];
+    const tx = Math.floor(worldX / TILE_SIZE) - Math.floor(def.footprint.w / 2);
+    const ty = Math.floor(worldY / TILE_SIZE) - Math.floor(def.footprint.h / 2);
+    const ok = this.isPlacementValid(this.placement.id, tx, ty);
+    this.placement.ghost
+      .setPosition((tx + def.footprint.w / 2) * TILE_SIZE, (ty + def.footprint.h) * TILE_SIZE)
+      .setTint(ok ? 0x80ff80 : 0xff8080);
+    this.placement.outline
+      .setPosition(tx * TILE_SIZE, ty * TILE_SIZE)
+      .setFillStyle(ok ? 0x80ff80 : 0xff8080, 0.2)
+      .setStrokeStyle(2, ok ? 0x80ff80 : 0xff8080);
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
@@ -486,21 +509,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (!this.placement) return;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    const def = BUILDING_DEFS[this.placement.id];
-    const tx = Math.floor(world.x / TILE_SIZE) - Math.floor(def.footprint.w / 2);
-    const ty = Math.floor(world.y / TILE_SIZE) - Math.floor(def.footprint.h / 2);
-    const ok = this.isPlacementValid(this.placement.id, tx, ty);
-    const ghost = this.placement.ghost;
-    const outline = this.placement.outline;
-    ghost
-      .setVisible(true)
-      .setPosition((tx + def.footprint.w / 2) * TILE_SIZE, (ty + def.footprint.h) * TILE_SIZE)
-      .setTint(ok ? 0x80ff80 : 0xff8080);
-    outline
-      .setVisible(true)
-      .setPosition(tx * TILE_SIZE, ty * TILE_SIZE)
-      .setFillStyle(ok ? 0x80ff80 : 0xff8080, 0.2)
-      .setStrokeStyle(2, ok ? 0x80ff80 : 0xff8080);
+    this.updatePlacementPreview(world.x, world.y);
   }
 
   private isPlacementValid(id: BuildingId, tx: number, ty: number): boolean {
@@ -607,10 +616,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    if (!this.roadMode) return;
-    if (this.touch.wasGesture) return;
-    this.roadPainting = true;
-    this.paintTileAtPointer(pointer);
+    if (this.roadMode) {
+      if (this.touch.wasGesture) return;
+      this.roadPainting = true;
+      this.paintTileAtPointer(pointer);
+      return;
+    }
+    // Touch UX: snap the placement preview to where the player put their
+    // finger before the lift, so they can see green/red BEFORE committing.
+    if (this.placement) {
+      const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.updatePlacementPreview(world.x, world.y);
+    }
   }
 
   private paintTileAtPointer(pointer: Phaser.Input.Pointer): void {
