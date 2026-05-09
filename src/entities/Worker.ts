@@ -71,9 +71,13 @@ export class Worker {
       .setDepth(19)
       .setVisible(false);
 
+    // Tiny Swords pawn frame is 192×192 with lots of empty space; scale to
+    // ~76 px so it sits around 1 tile (TILE_SIZE = 64) with feet on the
+    // tile centre.
     this.sprite = scene.add
       .sprite(wx, wy, 'worker')
-      .setOrigin(0.5, 0.9)
+      .setOrigin(0.5, 0.85)
+      .setScale(0.4)
       .setDepth(20)
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'worker').setData('worker', this);

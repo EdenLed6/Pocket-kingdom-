@@ -57,9 +57,14 @@ export class Unit {
     const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
     const wy = tileY * TILE_SIZE + TILE_SIZE / 2;
 
+    // Tiny Swords frames: 192×192 for most, 320×320 for Lancer. Scale
+    // so the silhouette sits roughly one tile wide (TILE_SIZE = 64).
+    const isLancer = id === 'spearman' || id === 'bandit_raider';
+    const scale = isLancer ? 0.28 : 0.4;
     this.sprite = scene.add
       .sprite(wx, wy, this.def.textureKey)
-      .setOrigin(0.5, 0.9)
+      .setOrigin(0.5, 0.85)
+      .setScale(scale)
       .setDepth(wy)
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'unit').setData('unit', this);

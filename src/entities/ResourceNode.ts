@@ -4,11 +4,12 @@ import { BALANCE, NODE_TO_RESOURCE, type NodeKind, type ResourceType } from '../
 
 interface NodeConfig {
   kind: NodeKind;
+  // For trees, this is a *base* — actual key picks a variant 1-4 at spawn.
   textureKey: string;
   stumpTextureKey: string | null; // null = sprite hidden when depleted
   origin: [number, number];
-  // 0 means it never regrows; > 0 = seconds to refill totalYield.
-  regrowSec: number;
+  scale: number;
+  regrowSec: number; // 0 = never regrow
   yieldPerChop: number;
   totalYield: number;
   gatherTimeSec: number;
@@ -17,9 +18,12 @@ interface NodeConfig {
 const CONFIGS: Record<NodeKind, NodeConfig> = {
   tree: {
     kind: 'tree',
-    textureKey: 'tree',
-    stumpTextureKey: 'tree-stump',
-    origin: [0.5, 0.85],
+    textureKey: 'tree_v1', // overridden per-instance to a 1..4 variant
+    stumpTextureKey: 'stump_v1',
+    origin: [0.5, 0.95],
+    // Tiny Swords trees are 192×256; scale to ~85px wide so they sit nicely
+    // on a 64-px tile and read taller than 1 tile (correct for trees).
+    scale: 0.45,
     regrowSec: BALANCE.nodes.treeRegrowSec,
     yieldPerChop: BALANCE.nodes.yieldPerChop.tree,
     totalYield: BALANCE.nodes.totalYield.tree,
@@ -30,7 +34,9 @@ const CONFIGS: Record<NodeKind, NodeConfig> = {
     textureKey: 'rock',
     stumpTextureKey: null,
     origin: [0.5, 0.7],
-    regrowSec: 0, // §4.5: rocks don't regrow
+    // rock1 is already 64×64 — full size matches the tile.
+    scale: 1.0,
+    regrowSec: 0,
     yieldPerChop: BALANCE.nodes.yieldPerChop.rock,
     totalYield: BALANCE.nodes.totalYield.rock,
     gatherTimeSec: BALANCE.worker.gatherTimeSec.stone,
@@ -39,7 +45,8 @@ const CONFIGS: Record<NodeKind, NodeConfig> = {
     kind: 'bush',
     textureKey: 'bush',
     stumpTextureKey: 'bush-bare',
-    origin: [0.5, 0.7],
+    origin: [0.5, 0.75],
+    scale: 0.55, // 128 → 70 px
     regrowSec: BALANCE.nodes.bushRegrowSec,
     yieldPerChop: BALANCE.nodes.yieldPerChop.bush,
     totalYield: BALANCE.nodes.totalYield.bush,
@@ -50,6 +57,7 @@ const CONFIGS: Record<NodeKind, NodeConfig> = {
     textureKey: 'deer',
     stumpTextureKey: null,
     origin: [0.5, 0.85],
+    scale: 0.6, // 128 → 77 px
     regrowSec: BALANCE.nodes.animalRespawnSec,
     yieldPerChop: BALANCE.nodes.yieldPerChop.animal,
     totalYield: BALANCE.nodes.totalYield.animal,
@@ -57,10 +65,6 @@ const CONFIGS: Record<NodeKind, NodeConfig> = {
   },
 };
 
-// Phase 4+ harvestable resource node (AoM-style multi-chop). Each chop
-// yields cfg.yieldPerChop; the node stays available until cfg.totalYield
-// is drained over many trips, then stumps / vanishes (and regrows after
-// cfg.regrowSec for trees / bushes / animals).
 export class ResourceNode {
   readonly kind: NodeKind;
   readonly resource: ResourceType;
@@ -70,6 +74,7 @@ export class ResourceNode {
   readonly worldY: number;
   readonly gatherTimeSec: number;
   private cfg: NodeConfig;
+  private treeVariant: number;
   private sprite: Phaser.GameObjects.Sprite;
   private scene: Phaser.Scene;
   private remaining: number;
@@ -86,9 +91,14 @@ export class ResourceNode {
     this.gatherTimeSec = this.cfg.gatherTimeSec;
     this.remaining = this.cfg.totalYield;
 
+    // Trees: roll a 1..4 variant for AoM-style forest variety.
+    this.treeVariant = kind === 'tree' ? Phaser.Math.Between(1, 4) : 1;
+    const initialKey = kind === 'tree' ? `tree_v${this.treeVariant}` : this.cfg.textureKey;
+
     this.sprite = scene.add
-      .sprite(this.worldX, this.worldY, this.cfg.textureKey)
+      .sprite(this.worldX, this.worldY, initialKey)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
+      .setScale(this.cfg.scale)
       .setDepth(this.worldY)
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'node').setData('node', this);
@@ -98,8 +108,6 @@ export class ResourceNode {
     return this.remaining > 0;
   }
 
-  // Harvest one chop. Returns the actual yield (clipped if the node has
-  // less left than cfg.yieldPerChop). Triggers stump / regrow when drained.
   harvest(): number {
     if (this.remaining <= 0) return 0;
     const got = Math.min(this.cfg.yieldPerChop, this.remaining);
@@ -110,8 +118,10 @@ export class ResourceNode {
   }
 
   private deplete(): void {
-    if (this.cfg.stumpTextureKey) {
-      this.sprite.setTexture(this.cfg.stumpTextureKey).setOrigin(0.5, 0.7);
+    if (this.kind === 'tree') {
+      this.sprite.setTexture(`stump_v${this.treeVariant}`).setOrigin(0.5, 0.85).setAlpha(1);
+    } else if (this.cfg.stumpTextureKey) {
+      this.sprite.setTexture(this.cfg.stumpTextureKey).setOrigin(0.5, 0.7).setAlpha(1);
     } else {
       this.sprite.setVisible(false);
     }
@@ -121,17 +131,16 @@ export class ResourceNode {
     }
   }
 
-  // Visual cue: alpha drops as the node depletes so a half-chopped tree
-  // looks visibly thinner. Cheap (no extra sprites).
   private updateVisualWear(): void {
     const ratio = this.remaining / this.cfg.totalYield;
-    this.sprite.setAlpha(0.55 + 0.45 * ratio);
+    this.sprite.setAlpha(0.6 + 0.4 * ratio);
   }
 
   private regrow(): void {
     this.remaining = this.cfg.totalYield;
+    const key = this.kind === 'tree' ? `tree_v${this.treeVariant}` : this.cfg.textureKey;
     this.sprite
-      .setTexture(this.cfg.textureKey)
+      .setTexture(key)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
       .setAlpha(1)
       .setVisible(true)

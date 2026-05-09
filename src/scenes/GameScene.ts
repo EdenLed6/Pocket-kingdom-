@@ -72,10 +72,13 @@ export class GameScene extends Phaser.Scene {
     if (!json) throw new Error('main_map JSON not found in cache');
     this.mapData = json.data;
 
+    // JSON has 32 baked in but our world now uses TILE_SIZE = 64 (Tiny
+    // Swords native scale). Override here so the layer renders at world
+    // coordinates that match every other position calc.
     const map = this.make.tilemap({
       data: json.data,
-      tileWidth: json.tileWidth,
-      tileHeight: json.tileHeight,
+      tileWidth: TILE_SIZE,
+      tileHeight: TILE_SIZE,
     });
     const tileset = map.addTilesetImage('terrain', 'terrain', TILE_SIZE, TILE_SIZE, 0, 0);
     if (!tileset) throw new Error('failed to bind terrain tileset');
@@ -259,43 +262,92 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // AoM-style biome placement: dense forests + rock clusters + berry
+  // patches + small deer herds, instead of uniform scatter. Result: most
+  // of the map is open grass for the player to build on, while resources
+  // are concentrated in recognisable clumps.
   private spawnNodes(): void {
     const th = BALANCE.townHall;
     const reserved = new Set<number>();
-    for (let dy = -1; dy <= th.sizeTiles + 1; dy++) {
-      for (let dx = -1; dx <= th.sizeTiles + 1; dx++) {
+    // Buffer the Town Hall area so resources don't crowd the spawn.
+    for (let dy = -3; dy <= th.sizeTiles + 3; dy++) {
+      for (let dx = -3; dx <= th.sizeTiles + 3; dx++) {
         reserved.add(this.tileKey(th.tileX + dx, th.tileY + dy));
       }
     }
 
-    type Plan = { kind: NodeKind; chance: number };
-    const plan: Plan[] = [
-      { kind: 'tree', chance: 0.05 },
-      { kind: 'rock', chance: 0.015 },
-      { kind: 'bush', chance: 0.01 },
-      { kind: 'animal', chance: 0.004 },
-    ];
     const rng = Phaser.Math.RND;
-    rng.sow(['phase-3-nodes']);
+    rng.sow(['phase-4-clusters']);
 
-    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
-      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
-        const k = this.tileKey(tx, ty);
-        if (reserved.has(k)) continue;
-        if (this.mapData[ty][tx] !== TILE.GRASS) continue;
-        const r = rng.frac();
-        let acc = 0;
-        for (const p of plan) {
-          acc += p.chance;
-          if (r < acc) {
-            this.nodes.push(new ResourceNode(this, p.kind, tx, ty));
-            this.nodeTiles.add(k);
-            reserved.add(k);
-            break;
-          }
-        }
-      }
+    // Forests: 5 dense clumps of 25–35 trees within radius 6.
+    for (let f = 0; f < 5; f++) {
+      const cx = rng.between(3, MAP_WIDTH_TILES - 4);
+      const cy = rng.between(3, MAP_HEIGHT_TILES - 4);
+      const target = rng.between(25, 35);
+      this.scatterCluster(rng, 'tree', cx, cy, 6, target, reserved);
     }
+    // Plus a sprinkling of lone trees outside forests for AoM-feel.
+    for (let i = 0; i < 25; i++) {
+      const tx = rng.between(0, MAP_WIDTH_TILES - 1);
+      const ty = rng.between(0, MAP_HEIGHT_TILES - 1);
+      this.tryPlace('tree', tx, ty, reserved);
+    }
+
+    // Rock clusters: 4 quarry-like clumps of 4–8 rocks.
+    for (let r = 0; r < 4; r++) {
+      const cx = rng.between(2, MAP_WIDTH_TILES - 3);
+      const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
+      this.scatterCluster(rng, 'rock', cx, cy, 3, rng.between(4, 8), reserved);
+    }
+
+    // Berry patches: 6 small clumps of 3–5 bushes.
+    for (let b = 0; b < 6; b++) {
+      const cx = rng.between(2, MAP_WIDTH_TILES - 3);
+      const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
+      this.scatterCluster(rng, 'bush', cx, cy, 2, rng.between(3, 5), reserved);
+    }
+
+    // Deer herds: 4 small herds of 2–3.
+    for (let d = 0; d < 4; d++) {
+      const cx = rng.between(2, MAP_WIDTH_TILES - 3);
+      const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
+      this.scatterCluster(rng, 'animal', cx, cy, 3, rng.between(2, 3), reserved);
+    }
+  }
+
+  // Place up to `target` nodes of `kind` around (cx,cy) within `radius`
+  // tiles. Uses a √r distribution so clusters look denser at the centre
+  // and feather out at the edges (AoM forest silhouette).
+  private scatterCluster(
+    rng: Phaser.Math.RandomDataGenerator,
+    kind: NodeKind,
+    cx: number,
+    cy: number,
+    radius: number,
+    target: number,
+    reserved: Set<number>,
+  ): void {
+    let placed = 0;
+    let attempts = 0;
+    while (placed < target && attempts < target * 4) {
+      attempts += 1;
+      const angle = rng.frac() * Math.PI * 2;
+      const r = Math.sqrt(rng.frac()) * radius;
+      const tx = Math.round(cx + Math.cos(angle) * r);
+      const ty = Math.round(cy + Math.sin(angle) * r);
+      if (this.tryPlace(kind, tx, ty, reserved)) placed += 1;
+    }
+  }
+
+  private tryPlace(kind: NodeKind, tx: number, ty: number, reserved: Set<number>): boolean {
+    if (tx < 0 || ty < 0 || tx >= MAP_WIDTH_TILES || ty >= MAP_HEIGHT_TILES) return false;
+    const k = this.tileKey(tx, ty);
+    if (reserved.has(k)) return false;
+    if (this.mapData[ty][tx] !== TILE.GRASS) return false;
+    this.nodes.push(new ResourceNode(this, kind, tx, ty));
+    this.nodeTiles.add(k);
+    reserved.add(k);
+    return true;
   }
 
   private spawnWorkers(): void {

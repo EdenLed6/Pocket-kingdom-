@@ -49,6 +49,14 @@ export class Building {
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'building').setData('building', this);
 
+    // Tiny Swords building textures vary in source size; scale so the
+    // visible footprint matches the spec footprint (extra height spills
+    // upward thanks to origin 0.5,1).
+    const tex = scene.textures.get(`b_${id}`).getSourceImage() as { width: number; height: number };
+    const targetWidth = this.def.footprint.w * TILE_SIZE;
+    const scale = targetWidth / Math.max(1, tex.width);
+    this.sprite.setScale(scale);
+
     this.progressBar = scene.add.graphics().setDepth(south + 1);
     this.drawProgressBar();
   }

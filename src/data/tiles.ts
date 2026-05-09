@@ -12,7 +12,7 @@ export const TILE = {
 
 export type TileId = (typeof TILE)[keyof typeof TILE];
 
-export const TILE_SIZE = 32;
+export const TILE_SIZE = 64;
 export const MAP_WIDTH_TILES = 40;
 export const MAP_HEIGHT_TILES = 60;
 
