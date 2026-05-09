@@ -5,6 +5,7 @@ import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
 import { diag } from './utils/diag';
 
+(window as unknown as { __phaserSeen?: boolean }).__phaserSeen = true;
 diag(`phaser version: ${Phaser.VERSION}`, 'ok');
 
 const config: Phaser.Types.Core.GameConfig = {

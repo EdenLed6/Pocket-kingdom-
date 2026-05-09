@@ -63,12 +63,31 @@
         window.__diag = line;
         line('boot ' + new Date().toISOString(), 'ok');
         line('ua ' + navigator.userAgent);
+        line('href ' + location.href);
         window.addEventListener('error', function (e) {
-          line('ERR ' + (e.message || e.error) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), 'err');
-        });
+          var t = e.target || {};
+          var src = t.src || t.href;
+          if (src) {
+            line('ASSET ERR ' + t.tagName + ' ' + src, 'err');
+          } else {
+            line('ERR ' + (e.message || e.error) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), 'err');
+          }
+        }, true);
         window.addEventListener('unhandledrejection', function (e) {
           line('REJ ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)), 'err');
         });
+        // Probe the bundle URL directly so we can see if it 404s.
+        var bundleUrl = new URL('./assets/main.js', location.href).href;
+        line('probe ' + bundleUrl);
+        fetch(bundleUrl, { method: 'GET' }).then(function (r) {
+          line('probe -> HTTP ' + r.status + ' ' + r.headers.get('content-type'), r.ok ? 'ok' : 'err');
+        }).catch(function (err) {
+          line('probe FAIL ' + err.message, 'err');
+        });
+        // After 4s, if Phaser hasn't reported in, say so loudly.
+        setTimeout(function () {
+          if (!window.__phaserSeen) line('TIMEOUT: bundle never executed', 'err');
+        }, 4000);
       })();
     </script>
     <script type="module" src="/src/main.ts"></script>
