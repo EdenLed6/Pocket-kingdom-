@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { BUILDING_DEFS, BUILDING_ORDER, type BuildingId } from '../data/buildings';
+import { UNIT_DEFS, PLAYER_UNIT_ORDER } from '../data/units';
 
 const HUD_FONT = {
   fontFamily: 'ui-monospace, monospace',
@@ -81,9 +82,74 @@ export class UIScene extends Phaser.Scene {
       }
     });
 
+    this.events.on('open-train-panel', this.openTrainPanel, this);
+    this.events.on('close-train-panel', this.closeTrainPanel, this);
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onRegistryChange, this);
     });
+  }
+
+  // ---------- train panel (shown when a Barracks is selected) ---------------
+
+  private trainPanel: Phaser.GameObjects.Container | null = null;
+  private trainBarracksId = -1;
+
+  private openTrainPanel(barracksId: number): void {
+    this.closeTrainPanel();
+    this.trainBarracksId = barracksId;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const panelH = 110;
+    const c = this.add.container(0, h - panelH).setDepth(1200).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, panelH, 0x000000, 0.85).setOrigin(0, 0));
+    c.add(this.add.text(12, 8, 'BARRACKS — Train', HUD_FONT));
+    const close = this.add
+      .text(w - 12, 8, '×', { ...HUD_FONT, fontSize: '24px' })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    close.on(Phaser.Input.Events.POINTER_UP, () => this.closeTrainPanel());
+    c.add(close);
+
+    const cardW = 96;
+    const cardH = 76;
+    const gap = 8;
+    PLAYER_UNIT_ORDER.forEach((id, idx) => {
+      const def = UNIT_DEFS[id];
+      const x = 12 + idx * (cardW + gap);
+      const y = 28;
+      const panel = this.add
+        .rectangle(x, y, cardW, cardH, 0x222230, 1)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, 0x80c0ff)
+        .setInteractive({ useHandCursor: true });
+      const icon = this.add.sprite(x + 22, y + cardH / 2, def.textureKey).setOrigin(0.5);
+      const tex = this.textures.get(def.textureKey).getSourceImage() as { width: number; height: number };
+      const scale = Math.min(36 / tex.width, (cardH - 12) / tex.height);
+      icon.setScale(scale);
+      const costStr = formatUnitCost(def);
+      const text = this.add.text(
+        x + 44,
+        y + 8,
+        `${def.name}\n${costStr}\n${def.trainTimeSec}s`,
+        CARD_FONT,
+      );
+      panel.on(Phaser.Input.Events.POINTER_UP, () => {
+        this.events.emit('train-unit', { id, barracksId: this.trainBarracksId });
+      });
+      c.add(panel);
+      c.add(icon);
+      c.add(text);
+    });
+
+    this.trainPanel = c;
+  }
+
+  private closeTrainPanel(): void {
+    if (!this.trainPanel) return;
+    this.trainPanel.destroy();
+    this.trainPanel = null;
+    this.trainBarracksId = -1;
   }
 
   private onRegistryChange(_parent: unknown, key: string): void {
@@ -212,4 +278,9 @@ function formatCost(def: { cost: Partial<Record<'wood' | 'stone' | 'food', numbe
   if (def.cost.stone) parts.push(`${def.cost.stone}S`);
   if (def.cost.food) parts.push(`${def.cost.food}F`);
   return parts.join(' ');
+}
+
+function formatUnitCost(def: { cost?: Partial<Record<'wood' | 'stone' | 'food', number>> }): string {
+  if (!def.cost) return '';
+  return formatCost({ cost: def.cost });
 }

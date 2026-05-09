@@ -10,7 +10,9 @@ import { BALANCE, NODE_TO_RESOURCE, type NodeKind, type ResourceType } from '../
 import { ResourceNode } from '../entities/ResourceNode';
 import { Worker } from '../entities/Worker';
 import { Building } from '../entities/Building';
+import { Unit } from '../entities/Unit';
 import { BUILDING_DEFS, type BuildingId } from '../data/buildings';
+import { UNIT_DEFS, type UnitId } from '../data/units';
 import type { TileXY } from '../utils/pathfinding';
 
 interface MapJson {
@@ -43,6 +45,9 @@ export class GameScene extends Phaser.Scene {
   private nodes: ResourceNode[] = [];
   private workers: Worker[] = [];
   private buildings: Building[] = [];
+  private units: Unit[] = [];
+  private selectedSoldier: Unit | null = null;
+  private selectedBarracks: Building | null = null;
   // Tile keys (`ty * 4096 + tx`) of every tile occupied by a building (site
   // or finished). Used by isWalkable + placement validation.
   private buildingTiles = new Set<number>();
@@ -109,13 +114,97 @@ export class GameScene extends Phaser.Scene {
     const ui = this.scene.get('UI');
     ui.events.on('build-card-selected', this.onBuildCardSelected, this);
     ui.events.on('build-cancel', this.cancelPlacement, this);
+    ui.events.on('train-unit', this.onTrainUnitRequest, this);
     // Register once; per-placement handlers leaked in the 3b draft.
     this.events.on('building-constructed', this.onBuildingConstructed, this);
+    this.events.on('unit-died', this.onUnitDied, this);
+
+    // Phase 4 dummy enemies for the §9 checkpoint: a small group of
+    // stationary bandit grunts up at the north edge of the map. Players
+    // train soldiers and march them up to attack.
+    this.spawnDummyBandits();
   }
 
   update(_time: number, delta: number): void {
     const dt = delta / 1000;
     for (const w of this.workers) w.update(dt);
+    for (const u of this.units) if (u.isAlive) u.update(dt);
+  }
+
+  private unitDeps() {
+    return {
+      mapWidthTiles: MAP_WIDTH_TILES,
+      mapHeightTiles: MAP_HEIGHT_TILES,
+      isWalkable: this.isWalkable.bind(this),
+      findEnemy: this.findEnemy.bind(this),
+    };
+  }
+
+  private findEnemy(forSide: 'player' | 'enemy', x: number, y: number, withinTiles: number): Unit | null {
+    const limit = (withinTiles * TILE_SIZE) ** 2;
+    let best: Unit | null = null;
+    let bestDistSq = Infinity;
+    for (const u of this.units) {
+      if (!u.isAlive) continue;
+      if (u.side === forSide) continue;
+      const dx = u.worldX - x;
+      const dy = u.worldY - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > limit) continue;
+      if (d2 < bestDistSq) {
+        best = u;
+        bestDistSq = d2;
+      }
+    }
+    return best;
+  }
+
+  private spawnDummyBandits(): void {
+    // Three dummies at the north of the map. Phase 5 raids replace this.
+    const positions: TileXY[] = [
+      { tx: 18, ty: 6 },
+      { tx: 21, ty: 7 },
+      { tx: 24, ty: 6 },
+    ];
+    for (const p of positions) {
+      this.units.push(new Unit(this, 'bandit_grunt', p.tx, p.ty, this.unitDeps()));
+    }
+  }
+
+  private onUnitDied(u: Unit): void {
+    const i = this.units.indexOf(u);
+    if (i >= 0) this.units.splice(i, 1);
+    if (this.selectedSoldier === u) this.selectedSoldier = null;
+  }
+
+  // Player tapped a Train button on the inline Barracks panel.
+  private onTrainUnitRequest(payload: { id: UnitId; barracksId: number }): void {
+    const def = UNIT_DEFS[payload.id];
+    if (!def.cost || !def.trainTimeSec) return;
+    const barracks = this.buildings.find(
+      (b) => b.instanceId === payload.barracksId && b.def.id === 'barracks' && b.isConstructed,
+    );
+    if (!barracks) return;
+    // Affordability.
+    for (const [k, v] of Object.entries(def.cost) as [ResourceType, number][]) {
+      if (((this.registry.get(REGISTRY_KEY[k]) as number) ?? 0) < v) return;
+    }
+    // Pop cap.
+    const pop = (this.registry.get('pop') as number) ?? 0;
+    const popCap = (this.registry.get('popCap') as number) ?? 0;
+    if (pop >= popCap) return;
+    // Deduct + bump pop.
+    for (const [k, v] of Object.entries(def.cost) as [ResourceType, number][]) {
+      const cur = (this.registry.get(REGISTRY_KEY[k]) as number) ?? 0;
+      this.registry.set(REGISTRY_KEY[k], cur - v);
+    }
+    this.registry.set('pop', pop + 1);
+    // Train timer; spawn at the south-centre tile of the barracks footprint.
+    this.time.delayedCall(def.trainTimeSec * 1000, () => {
+      const t = barracks.interactionTile;
+      const u = new Unit(this, payload.id, t.tx, t.ty, this.unitDeps());
+      this.units.push(u);
+    });
   }
 
   // ---------- spawn helpers ---------------------------------------------------
@@ -422,43 +511,114 @@ export class GameScene extends Phaser.Scene {
     const obj = currentlyOver.find((o) => {
       if (!o.getData) return false;
       const k = o.getData('kind');
-      return k === 'worker' || k === 'node' || k === 'building';
+      return k === 'worker' || k === 'node' || k === 'building' || k === 'unit';
     });
+
+    // No interactive object under the tap.
     if (!obj) {
-      this.deselect();
+      // If a soldier is selected, treat the tap as an attack-move order to
+      // the world tile under the pointer.
+      if (this.selectedSoldier) {
+        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        const tx = Math.floor(world.x / TILE_SIZE);
+        const ty = Math.floor(world.y / TILE_SIZE);
+        this.selectedSoldier.attackMove({ tx, ty });
+        return;
+      }
+      this.deselectAll();
       return;
     }
 
     const kind = obj.getData('kind');
+
     if (kind === 'worker') {
       const w = obj.getData('worker') as Worker;
+      this.deselectSoldier();
+      this.closeTrainPanel();
       if (this.selectedWorker === w) {
-        this.deselect();
+        this.deselectWorker();
       } else {
-        this.deselect();
+        this.deselectWorker();
         this.selectedWorker = w;
         w.setSelected(true);
       }
       return;
     }
+
+    if (kind === 'unit') {
+      const u = obj.getData('unit') as Unit;
+      if (u.side === 'player') {
+        // Selecting one of our soldiers.
+        this.deselectWorker();
+        this.closeTrainPanel();
+        if (this.selectedSoldier === u) {
+          this.deselectSoldier();
+        } else {
+          this.deselectSoldier();
+          this.selectedSoldier = u;
+          u.setSelected(true);
+        }
+        return;
+      }
+      // Tapped an enemy: if soldier selected, attack it.
+      if (this.selectedSoldier) {
+        this.selectedSoldier.attackMove({ tx: u.tileX, ty: u.tileY }, u);
+      }
+      return;
+    }
+
     if (kind === 'node') {
       const node = obj.getData('node') as ResourceNode;
       if (this.selectedWorker) this.selectedWorker.assignNode(node);
       return;
     }
+
     if (kind === 'building') {
       const b = obj.getData('building') as Building;
       if (this.selectedWorker && !b.isConstructed) {
         this.selectedWorker.assignSite(b);
+        return;
       }
+      // Tapping a constructed Barracks opens the inline train panel.
+      if (b.isConstructed && b.def.id === 'barracks') {
+        this.openTrainPanel(b);
+        return;
+      }
+      this.deselectAll();
       return;
     }
   }
 
-  private deselect(): void {
+  private openTrainPanel(b: Building): void {
+    this.deselectWorker();
+    this.deselectSoldier();
+    this.selectedBarracks = b;
+    this.scene.get('UI').events.emit('open-train-panel', b.instanceId);
+  }
+
+  private closeTrainPanel(): void {
+    if (!this.selectedBarracks) return;
+    this.selectedBarracks = null;
+    this.scene.get('UI').events.emit('close-train-panel');
+  }
+
+  private deselectWorker(): void {
     if (this.selectedWorker) {
       this.selectedWorker.setSelected(false);
       this.selectedWorker = null;
     }
+  }
+
+  private deselectSoldier(): void {
+    if (this.selectedSoldier) {
+      this.selectedSoldier.setSelected(false);
+      this.selectedSoldier = null;
+    }
+  }
+
+  private deselectAll(): void {
+    this.deselectWorker();
+    this.deselectSoldier();
+    this.closeTrainPanel();
   }
 }

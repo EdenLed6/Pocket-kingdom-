@@ -47,6 +47,74 @@ export class PreloadScene extends Phaser.Scene {
     this.makeSelectRing();
     this.makeBuildings();
     this.makeBuildIcon();
+    this.makeUnits();
+  }
+
+  private makeUnits(): void {
+    // Tunic colour + accessory differentiates each soldier silhouette at
+    // 18×26. Bandits are mirrored darker so they read as hostile.
+    this.makeHumanoid('u_spearman', 0xc94c2a, 0x6b4423, 'spear', false);
+    this.makeHumanoid('u_archer', 0x3a8a3a, 0x6b4423, 'bow', false);
+    this.makeHumanoid('u_knight', 0x90a0c0, 0x444454, 'sword', false);
+    this.makeHumanoid('u_bandit_grunt', 0x4a3a3a, 0x222222, 'club', true);
+    this.makeHumanoid('u_bandit_archer', 0x3a3a4a, 0x222222, 'bow', true);
+    this.makeHumanoid('u_bandit_raider', 0x2a2a2a, 0x000000, 'sword', true);
+  }
+
+  private makeHumanoid(
+    key: string,
+    tunicColor: number,
+    pantsColor: number,
+    weapon: 'spear' | 'bow' | 'sword' | 'club',
+    isBandit: boolean,
+  ): void {
+    const W = 20;
+    const H = 28;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // Legs.
+    g.fillStyle(pantsColor, 1);
+    g.fillRect(7, 20, 2, 6);
+    g.fillRect(11, 20, 2, 6);
+    // Body.
+    g.fillStyle(tunicColor, 1);
+    g.fillRect(6, 12, 8, 9);
+    g.lineStyle(1, 0x222222, 1);
+    g.strokeRect(6, 12, 8, 9);
+    // Head.
+    g.fillStyle(0xf0c890, 1);
+    g.fillCircle(10, 8, 4);
+    g.lineStyle(1, 0x6b4423, 1);
+    g.strokeCircle(10, 8, 4);
+    // Hair / hat tuft.
+    g.fillStyle(isBandit ? 0x111111 : 0x6b4423, 1);
+    g.fillRect(7, 4, 6, 3);
+
+    if (weapon === 'spear') {
+      g.lineStyle(2, 0x6b4423, 1);
+      g.lineBetween(16, 24, 16, 2);
+      g.fillStyle(0xc8c8d0, 1);
+      g.fillTriangle(14, 4, 18, 4, 16, 0);
+    } else if (weapon === 'bow') {
+      g.lineStyle(2, 0x6b4423, 1);
+      g.beginPath();
+      g.arc(3, 14, 6, -Math.PI / 2, Math.PI / 2, false);
+      g.strokePath();
+      g.lineStyle(1, 0xeee0c0, 1);
+      g.lineBetween(3, 8, 3, 20);
+    } else if (weapon === 'sword') {
+      g.lineStyle(2, 0xc8c8d0, 1);
+      g.lineBetween(17, 20, 17, 6);
+      g.lineStyle(2, 0x6b4423, 1);
+      g.lineBetween(15, 20, 19, 20);
+    } else if (weapon === 'club') {
+      g.lineStyle(3, 0x4a3a18, 1);
+      g.lineBetween(16, 22, 16, 8);
+      g.fillStyle(0x4a3a18, 1);
+      g.fillCircle(16, 8, 3);
+    }
+
+    g.generateTexture(key, W, H);
+    g.destroy();
   }
 
   private makeTree(): void {
