@@ -149,8 +149,8 @@ export class PreloadScene extends Phaser.Scene {
           }
           break;
       }
-      g.lineStyle(1, 0x000000, 0.1);
-      g.strokeRect(x0 + 0.5, 0.5, T - 1, T - 1);
+      // No tile-edge stroke: the grid lines made the world look segmented.
+      // Adjacent tiles of the same type now blend into one continuous surface.
     }
     g.generateTexture('terrain', totalWidth, T);
     g.destroy();

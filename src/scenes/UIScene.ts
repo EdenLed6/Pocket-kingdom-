@@ -40,7 +40,7 @@ export class UIScene extends Phaser.Scene {
   private lines: ResourceLine[] = [];
   private buildButton!: Phaser.GameObjects.Sprite;
   private roadButton!: Phaser.GameObjects.Sprite;
-  private roadActive = false;
+  private paintModeLabel: Phaser.GameObjects.Text | null = null;
   private drawer: Phaser.GameObjects.Container | null = null;
   private cards: BuildCard[] = [];
 
@@ -93,10 +93,9 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
     this.roadButton.on(Phaser.Input.Events.POINTER_UP, () => {
-      this.roadActive = !this.roadActive;
-      this.roadButton.setTint(this.roadActive ? 0x80ff80 : 0xffffff);
       this.events.emit('road-toggle');
     });
+    this.events.on('paint-mode-changed', this.onPaintModeChanged, this);
 
     this.events.on('open-building-panel', this.openBuildingPanel, this);
     this.events.on('close-building-panel', this.closeBuildingPanel, this);
@@ -308,6 +307,35 @@ export class UIScene extends Phaser.Scene {
 
   // Quiet drawer teardown for when the user picked a card. closeDrawer's
   // build-cancel emit would race-destroy the placement we just created.
+  private onPaintModeChanged(mode: 'off' | 'road' | 'water'): void {
+    // Tint the road button to signal the active mode and show a label so
+    // the player knows what tapping will paint.
+    if (mode === 'off') {
+      this.roadButton.clearTint();
+    } else if (mode === 'road') {
+      this.roadButton.setTint(0xa07040); // dirt brown
+    } else {
+      this.roadButton.setTint(0x60a0e0); // water blue
+    }
+    if (this.paintModeLabel) {
+      this.paintModeLabel.destroy();
+      this.paintModeLabel = null;
+    }
+    if (mode !== 'off') {
+      this.paintModeLabel = this.add
+        .text(this.scale.width / 2, this.scale.height - 16, mode === 'road' ? 'PAINT: ROAD' : 'DIG: WATER', {
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: '14px',
+          color: '#ffffff',
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          padding: { left: 8, right: 8, top: 4, bottom: 4 },
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(1100)
+        .setScrollFactor(0);
+    }
+  }
+
   private dismissDrawer(): void {
     if (!this.drawer) return;
     this.drawer.destroy();
@@ -367,11 +395,16 @@ export class UIScene extends Phaser.Scene {
         (def.cost.food ?? 0) <= food;
       const locked = !prereqOk;
       const dim = !affordOk;
-      c.panel.setData('locked', locked);
-      c.panel.setStrokeStyle(2, locked ? 0xaa3030 : dim ? 0x55556a : 0x80c0ff);
-      c.panel.setFillStyle(locked ? 0x331818 : 0x222230, 1);
-      c.icon.setAlpha(locked ? 0.35 : dim ? 0.6 : 1);
-      c.text.setAlpha(locked ? 0.6 : 1);
+      c.panel.setData('locked', locked || dim);
+      c.panel.setStrokeStyle(2, locked ? 0xaa3030 : dim ? 0x666666 : 0x80c0ff);
+      c.panel.setFillStyle(locked ? 0x331818 : dim ? 0x202028 : 0x222230, 1);
+      c.icon.setAlpha(locked || dim ? 0.55 : 1);
+      // Gray tint for unaffordable so it's clearly "off". Locked cards keep
+      // the dim alpha but no tint (red border conveys lock state).
+      if (dim && !locked) c.icon.setTint(0x808080);
+      else c.icon.clearTint();
+      c.text.setAlpha(locked ? 0.55 : dim ? 0.6 : 1);
+      c.text.setColor(dim && !locked ? '#aaaaaa' : '#ffffff');
     }
   }
 }

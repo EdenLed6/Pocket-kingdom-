@@ -59,8 +59,10 @@ export class GameScene extends Phaser.Scene {
   private touch!: TouchController;
   // Road / decoration paint mode (P5). When on, taps + drags repaint
   // grass <-> dirt-path tiles. Exclusive: no other tap dispatch fires.
-  private roadMode = false;
-  private roadPainting = false;
+  // Paint mode: 'off' = normal play, 'road' = paint grass<->dirt path,
+  // 'water' = paint grass<->water (Eden's "dig channels" request).
+  private paintMode: 'off' | 'road' | 'water' = 'off';
+  private painting = false;
   private tilemapLayer!: Phaser.Tilemaps.TilemapLayer | Phaser.Tilemaps.TilemapGPULayer;
 
   constructor() {
@@ -555,8 +557,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (this.roadMode) {
-      if (this.roadPainting) this.paintTileAtPointer(pointer);
+    if (this.paintMode !== 'off') {
+      if (this.painting) this.paintTileAtPointer(pointer);
       return;
     }
     if (!this.placement) return;
@@ -678,27 +680,31 @@ export class GameScene extends Phaser.Scene {
 
   // ---------- input -----------------------------------------------------------
 
-  // Road-paint mode is exclusive: when on, no other tap dispatch fires.
-  // Toggling clears any in-flight placement / selection.
+  // Paint mode cycles off -> road -> water -> off. While on, no other tap
+  // dispatch fires. Toggling clears any in-flight placement / selection.
   private toggleRoadMode(): void {
-    this.roadMode = !this.roadMode;
-    if (this.roadMode) {
+    const next: Record<typeof this.paintMode, typeof this.paintMode> = {
+      off: 'road',
+      road: 'water',
+      water: 'off',
+    };
+    this.paintMode = next[this.paintMode];
+    if (this.paintMode !== 'off') {
       this.cancelPlacement();
       this.deselectAll();
     } else {
-      this.roadPainting = false;
+      this.painting = false;
     }
+    this.scene.get('UI').events.emit('paint-mode-changed', this.paintMode);
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    if (this.roadMode) {
+    if (this.paintMode !== 'off') {
       if (this.touch.wasGesture) return;
-      this.roadPainting = true;
+      this.painting = true;
       this.paintTileAtPointer(pointer);
       return;
     }
-    // Touch UX: snap the placement preview to where the player put their
-    // finger before the lift, so they can see green/red BEFORE committing.
     if (this.placement) {
       const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.updatePlacementPreview(world.x, world.y);
@@ -713,17 +719,24 @@ export class GameScene extends Phaser.Scene {
     if (this.buildingTiles.has(this.tileKey(tx, ty))) return;
     if (this.nodeTiles.has(this.tileKey(tx, ty))) return;
     const cur = this.mapData[ty][tx];
-    // Only repaint grass <-> dirt path. Water / bridge / forest floor /
-    // stone-ground stay as-is to avoid breaking the map's structural look.
-    if (cur !== TILE.GRASS && cur !== TILE.DIRT_PATH) return;
-    const next = cur === TILE.DIRT_PATH ? TILE.GRASS : TILE.DIRT_PATH;
+    let next: number | null = null;
+    if (this.paintMode === 'road') {
+      // Toggle grass <-> dirt path.
+      if (cur === TILE.GRASS) next = TILE.DIRT_PATH;
+      else if (cur === TILE.DIRT_PATH) next = TILE.GRASS;
+    } else if (this.paintMode === 'water') {
+      // Toggle grass <-> water (Eden's "dig channels" feature).
+      if (cur === TILE.GRASS) next = TILE.WATER;
+      else if (cur === TILE.WATER) next = TILE.GRASS;
+    }
+    if (next === null) return;
     this.mapData[ty][tx] = next;
     this.tilemapLayer.putTileAt(next, tx, ty);
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]): void {
-    if (this.roadMode) {
-      this.roadPainting = false;
+    if (this.paintMode !== 'off') {
+      this.painting = false;
       return;
     }
     if (this.touch.wasGesture) return;
