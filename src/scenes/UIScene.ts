@@ -82,74 +82,120 @@ export class UIScene extends Phaser.Scene {
       }
     });
 
-    this.events.on('open-train-panel', this.openTrainPanel, this);
-    this.events.on('close-train-panel', this.closeTrainPanel, this);
+    this.events.on('open-building-panel', this.openBuildingPanel, this);
+    this.events.on('close-building-panel', this.closeBuildingPanel, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onRegistryChange, this);
     });
   }
 
-  // ---------- train panel (shown when a Barracks is selected) ---------------
+  // ---------- unified building selection panel ------------------------------
 
-  private trainPanel: Phaser.GameObjects.Container | null = null;
-  private trainBarracksId = -1;
+  private buildingPanel: Phaser.GameObjects.Container | null = null;
+  private panelBarracksId = -1;
 
-  private openTrainPanel(barracksId: number): void {
-    this.closeTrainPanel();
-    this.trainBarracksId = barracksId;
+  private openBuildingPanel(payload: {
+    instanceId: number;
+    id: BuildingId;
+    name: string;
+    hp: number;
+    hpMax: number;
+  }): void {
+    this.closeBuildingPanel();
+    this.panelBarracksId = payload.instanceId;
     const w = this.scale.width;
     const h = this.scale.height;
-    const panelH = 110;
+    const panelH = 130;
     const c = this.add.container(0, h - panelH).setDepth(1200).setScrollFactor(0);
     c.add(this.add.rectangle(0, 0, w, panelH, 0x000000, 0.85).setOrigin(0, 0));
-    c.add(this.add.text(12, 8, 'BARRACKS — Train', HUD_FONT));
+    c.add(
+      this.add.text(12, 8, `${payload.name}  HP ${payload.hp}/${payload.hpMax}`, HUD_FONT),
+    );
     const close = this.add
       .text(w - 12, 8, '×', { ...HUD_FONT, fontSize: '24px' })
       .setOrigin(1, 0)
       .setInteractive({ useHandCursor: true });
-    close.on(Phaser.Input.Events.POINTER_UP, () => this.closeTrainPanel());
+    close.on(Phaser.Input.Events.POINTER_UP, () => this.closeBuildingPanel());
     c.add(close);
 
+    if (payload.id === 'town_hall') {
+      this.fillTownHallPanel(c);
+    } else if (payload.id === 'barracks') {
+      this.fillBarracksPanel(c);
+    } else {
+      // Read-only buildings: name + brief function description per §4.4.
+      c.add(this.add.text(12, 36, INFO_TEXT[payload.id] ?? '', CARD_FONT));
+    }
+
+    this.buildingPanel = c;
+  }
+
+  private closeBuildingPanel(): void {
+    if (!this.buildingPanel) return;
+    this.buildingPanel.destroy();
+    this.buildingPanel = null;
+    this.panelBarracksId = -1;
+  }
+
+  private fillTownHallPanel(c: Phaser.GameObjects.Container): void {
+    // §4.3: train Worker (30 food + 20 wood, 10s).
+    const x = 12;
+    const y = 36;
+    const cardW = 160;
+    const cardH = 76;
+    const panel = this.add
+      .rectangle(x, y, cardW, cardH, 0x222230, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0x80c0ff)
+      .setInteractive({ useHandCursor: true });
+    const icon = this.add.sprite(x + 22, y + cardH / 2, 'worker').setOrigin(0.5);
+    const tex = this.textures.get('worker').getSourceImage() as { width: number; height: number };
+    icon.setScale(Math.min(36 / tex.width, (cardH - 12) / tex.height));
+    const text = this.add.text(
+      x + 44,
+      y + 8,
+      `Train Worker\n30F 20W\n10s`,
+      CARD_FONT,
+    );
+    panel.on(Phaser.Input.Events.POINTER_UP, () => this.events.emit('train-worker'));
+    c.add(panel);
+    c.add(icon);
+    c.add(text);
+  }
+
+  private fillBarracksPanel(c: Phaser.GameObjects.Container): void {
     const cardW = 96;
     const cardH = 76;
     const gap = 8;
     PLAYER_UNIT_ORDER.forEach((id, idx) => {
       const def = UNIT_DEFS[id];
       const x = 12 + idx * (cardW + gap);
-      const y = 28;
+      const y = 36;
       const panel = this.add
         .rectangle(x, y, cardW, cardH, 0x222230, 1)
         .setOrigin(0, 0)
         .setStrokeStyle(2, 0x80c0ff)
         .setInteractive({ useHandCursor: true });
       const icon = this.add.sprite(x + 22, y + cardH / 2, def.textureKey).setOrigin(0.5);
-      const tex = this.textures.get(def.textureKey).getSourceImage() as { width: number; height: number };
-      const scale = Math.min(36 / tex.width, (cardH - 12) / tex.height);
-      icon.setScale(scale);
-      const costStr = formatUnitCost(def);
+      const tex = this.textures.get(def.textureKey).getSourceImage() as {
+        width: number;
+        height: number;
+      };
+      icon.setScale(Math.min(36 / tex.width, (cardH - 12) / tex.height));
       const text = this.add.text(
         x + 44,
         y + 8,
-        `${def.name}\n${costStr}\n${def.trainTimeSec}s`,
+        `${def.name}\n${formatUnitCost(def)}\n${def.trainTimeSec}s`,
         CARD_FONT,
       );
       panel.on(Phaser.Input.Events.POINTER_UP, () => {
-        this.events.emit('train-unit', { id, barracksId: this.trainBarracksId });
+        this.events.emit('train-unit', { id, barracksId: this.panelBarracksId });
       });
       c.add(panel);
       c.add(icon);
       c.add(text);
     });
-
-    this.trainPanel = c;
-  }
-
-  private closeTrainPanel(): void {
-    if (!this.trainPanel) return;
-    this.trainPanel.destroy();
-    this.trainPanel = null;
-    this.trainBarracksId = -1;
   }
 
   private onRegistryChange(_parent: unknown, key: string): void {
@@ -292,3 +338,16 @@ function formatUnitCost(def: { cost?: Partial<Record<'wood' | 'stone' | 'food', 
   if (!def.cost) return '';
   return formatCost({ cost: def.cost });
 }
+
+// One-liner descriptions for the read-only branch of the building panel.
+// Sourced from §4.4 functions; tweak the wording as we localise.
+const INFO_TEXT: Partial<Record<BuildingId, string>> = {
+  house: '+3 population cap.',
+  lumber_mill: '+50% wood when workers deposit here.',
+  quarry: '+50% stone when workers deposit here.',
+  farm: 'Generates 1 food every 5 seconds, no worker needed.',
+  hunters_lodge: '+30% food when workers deposit animal kills here.',
+  warehouse: '+200 wood, +150 stone, +200 food storage cap.',
+  wall: 'Blocks bandit movement.',
+  tower: 'Auto-attacks bandits within 5 tiles (Phase 5).',
+};

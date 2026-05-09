@@ -69,6 +69,16 @@ export class Building {
     }
   }
 
+  // Used at game start for the Town Hall: skip the construction phase so
+  // the building is born fully built without firing 'building-constructed'.
+  markPrebuilt(): void {
+    this.buildProgress = this.def.buildTimeSec;
+    this.isConstructed = true;
+    this.hp = this.def.hpMax;
+    this.sprite.setAlpha(1);
+    this.progressBar.destroy();
+  }
+
   contributeBuild(seconds: number): void {
     if (this.isConstructed) return;
     this.buildProgress = Math.min(this.def.buildTimeSec, this.buildProgress + seconds);

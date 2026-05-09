@@ -77,6 +77,12 @@ export const BALANCE = {
     tileY: 45,
     sizeTiles: 3,
   },
+
+  // Worker training at the Town Hall per §4.3.
+  workerTrain: {
+    cost: { food: 30, wood: 20 },
+    trainTimeSec: 10,
+  },
 } as const;
 
 export type ResourceType = 'wood' | 'stone' | 'food';

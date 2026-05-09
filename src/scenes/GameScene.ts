@@ -115,6 +115,7 @@ export class GameScene extends Phaser.Scene {
     ui.events.on('build-card-selected', this.onBuildCardSelected, this);
     ui.events.on('build-cancel', this.cancelPlacement, this);
     ui.events.on('train-unit', this.onTrainUnitRequest, this);
+    ui.events.on('train-worker', this.onTrainWorkerRequest, this);
     // Register once; per-placement handlers leaked in the 3b draft.
     this.events.on('building-constructed', this.onBuildingConstructed, this);
     this.events.on('unit-died', this.onUnitDied, this);
@@ -177,7 +178,36 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedSoldier === u) this.selectedSoldier = null;
   }
 
-  // Player tapped a Train button on the inline Barracks panel.
+  // §4.3: Town Hall trains workers. Cost 30 food + 20 wood, 10s.
+  private onTrainWorkerRequest(): void {
+    const cost = BALANCE.workerTrain.cost;
+    const wood = (this.registry.get(REGISTRY_KEY.wood) as number) ?? 0;
+    const food = (this.registry.get(REGISTRY_KEY.food) as number) ?? 0;
+    if ((cost.wood ?? 0) > wood) return;
+    if ((cost.food ?? 0) > food) return;
+    const pop = (this.registry.get('pop') as number) ?? 0;
+    const popCap = (this.registry.get('popCap') as number) ?? 0;
+    if (pop >= popCap) return;
+    this.registry.set(REGISTRY_KEY.wood, wood - (cost.wood ?? 0));
+    this.registry.set(REGISTRY_KEY.food, food - (cost.food ?? 0));
+    this.registry.set('pop', pop + 1);
+    this.time.delayedCall(BALANCE.workerTrain.trainTimeSec * 1000, () => {
+      const th = BALANCE.townHall;
+      const t = { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles };
+      const w = new Worker(this.workers.length, this, t.tx, t.ty, {
+        mapWidthTiles: MAP_WIDTH_TILES,
+        mapHeightTiles: MAP_HEIGHT_TILES,
+        isWalkable: this.isWalkable.bind(this),
+        getDropoffTile: this.getDropoffTile.bind(this),
+        deposit: this.deposit.bind(this),
+        findNearestNode: this.findNearestNode.bind(this),
+        findNearestSite: this.findNearestSite.bind(this),
+      });
+      this.workers.push(w);
+    });
+  }
+
+  // Player tapped a Train button on the Barracks selection panel.
   private onTrainUnitRequest(payload: { id: UnitId; barracksId: number }): void {
     const def = UNIT_DEFS[payload.id];
     if (!def.cost || !def.trainTimeSec) return;
@@ -211,18 +241,13 @@ export class GameScene extends Phaser.Scene {
 
   private spawnTownHall(): void {
     const th = BALANCE.townHall;
-    const sizePx = th.sizeTiles * TILE_SIZE;
-    const cx = th.tileX * TILE_SIZE + sizePx / 2;
-    const cy = th.tileY * TILE_SIZE + sizePx / 2;
-    this.add
-      .sprite(cx, cy + sizePx / 2, 'town-hall')
-      .setOrigin(0.5, 1)
-      .setDepth(cy + sizePx / 2);
-    // Mark the Town Hall footprint as building tiles.
-    for (let dy = 0; dy < th.sizeTiles; dy++) {
-      for (let dx = 0; dx < th.sizeTiles; dx++) {
-        this.buildingTiles.add(this.tileKey(th.tileX + dx, th.tileY + dy));
-      }
+    // Town Hall is just a pre-built Building. This unifies tap dispatch +
+    // selection panel handling across every building type, including TH.
+    const b = new Building(this, 'town_hall', th.tileX, th.tileY);
+    b.markPrebuilt();
+    this.buildings.push(b);
+    for (const t of b.footprintTiles()) {
+      this.buildingTiles.add(this.tileKey(t.tx, t.ty));
     }
   }
 
@@ -599,7 +624,7 @@ export class GameScene extends Phaser.Scene {
     if (kind === 'worker') {
       const w = obj.getData('worker') as Worker;
       this.deselectSoldier();
-      this.closeTrainPanel();
+      this.closeBuildingPanel();
       if (this.selectedWorker === w) {
         this.deselectWorker();
       } else {
@@ -615,7 +640,7 @@ export class GameScene extends Phaser.Scene {
       if (u.side === 'player') {
         // Selecting one of our soldiers.
         this.deselectWorker();
-        this.closeTrainPanel();
+        this.closeBuildingPanel();
         if (this.selectedSoldier === u) {
           this.deselectSoldier();
         } else {
@@ -644,9 +669,9 @@ export class GameScene extends Phaser.Scene {
         this.selectedWorker.assignSite(b);
         return;
       }
-      // Tapping a constructed Barracks opens the inline train panel.
-      if (b.isConstructed && b.def.id === 'barracks') {
-        this.openTrainPanel(b);
+      // Any constructed building opens the unified selection panel.
+      if (b.isConstructed) {
+        this.openBuildingPanel(b);
         return;
       }
       this.deselectAll();
@@ -654,17 +679,23 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private openTrainPanel(b: Building): void {
+  private openBuildingPanel(b: Building): void {
     this.deselectWorker();
     this.deselectSoldier();
     this.selectedBarracks = b;
-    this.scene.get('UI').events.emit('open-train-panel', b.instanceId);
+    this.scene.get('UI').events.emit('open-building-panel', {
+      instanceId: b.instanceId,
+      id: b.def.id,
+      name: b.def.name,
+      hp: b.hp,
+      hpMax: b.def.hpMax,
+    });
   }
 
-  private closeTrainPanel(): void {
+  private closeBuildingPanel(): void {
     if (!this.selectedBarracks) return;
     this.selectedBarracks = null;
-    this.scene.get('UI').events.emit('close-train-panel');
+    this.scene.get('UI').events.emit('close-building-panel');
   }
 
   private deselectWorker(): void {
@@ -684,6 +715,6 @@ export class GameScene extends Phaser.Scene {
   private deselectAll(): void {
     this.deselectWorker();
     this.deselectSoldier();
-    this.closeTrainPanel();
+    this.closeBuildingPanel();
   }
 }

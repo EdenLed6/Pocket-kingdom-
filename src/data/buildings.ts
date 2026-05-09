@@ -5,6 +5,7 @@
 import type { ResourceType } from './balance';
 
 export type BuildingId =
+  | 'town_hall'
   | 'house'
   | 'lumber_mill'
   | 'quarry'
@@ -32,6 +33,17 @@ export interface BuildingDef {
 }
 
 export const BUILDING_DEFS: Record<BuildingId, BuildingDef> = {
+  town_hall: {
+    id: 'town_hall',
+    name: 'Town Hall',
+    footprint: { w: 3, h: 3 },
+    cost: {},
+    // Pre-built at game start via Building.markPrebuilt(); buildTimeSec
+    // is non-zero only to keep the construction-progress math safe if it
+    // ever flows through.
+    buildTimeSec: 1,
+    hpMax: 500,
+  },
   house: {
     id: 'house',
     name: 'House',

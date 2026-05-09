@@ -320,7 +320,7 @@ export class PreloadScene extends Phaser.Scene {
     g.fillRect(47, 0, 2, 8);
     g.fillStyle(0xffd040, 1);
     g.fillTriangle(49, 1, 56, 4, 49, 7);
-    g.generateTexture('town-hall', W, H);
+    g.generateTexture('b_town_hall', W, H);
     g.destroy();
   }
 
