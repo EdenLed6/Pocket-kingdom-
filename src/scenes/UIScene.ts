@@ -37,6 +37,8 @@ const CARD_GAP = 8;
 export class UIScene extends Phaser.Scene {
   private lines: ResourceLine[] = [];
   private buildButton!: Phaser.GameObjects.Sprite;
+  private roadButton!: Phaser.GameObjects.Sprite;
+  private roadActive = false;
   private drawer: Phaser.GameObjects.Container | null = null;
   private cards: BuildCard[] = [];
 
@@ -80,6 +82,18 @@ export class UIScene extends Phaser.Scene {
       } else {
         this.openDrawer();
       }
+    });
+
+    // ROAD button (bottom-right, left of BUILD). Toggles road-paint mode.
+    this.roadButton = this.add
+      .sprite(w - 48 - 72, this.scale.height - 48, 'road_button')
+      .setDepth(1100)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    this.roadButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      this.roadActive = !this.roadActive;
+      this.roadButton.setTint(this.roadActive ? 0x80ff80 : 0xffffff);
+      this.events.emit('road-toggle');
     });
 
     this.events.on('open-building-panel', this.openBuildingPanel, this);

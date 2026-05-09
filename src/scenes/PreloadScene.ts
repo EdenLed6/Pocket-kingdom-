@@ -47,7 +47,26 @@ export class PreloadScene extends Phaser.Scene {
     this.makeSelectRing();
     this.makeBuildings();
     this.makeBuildIcon();
+    this.makeRoadIcon();
     this.makeUnits();
+  }
+
+  private makeRoadIcon(): void {
+    const W = 64;
+    const H = 64;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x000000, 0.6);
+    g.fillCircle(W / 2, H / 2, 26);
+    g.lineStyle(2, 0xffffff, 0.9);
+    g.strokeCircle(W / 2, H / 2, 26);
+    // Horizontal dirt path with two pebbles.
+    g.fillStyle(0xa07040, 1);
+    g.fillRect(20, 28, 24, 8);
+    g.fillStyle(0xffffff, 0.85);
+    g.fillRect(26, 30, 2, 2);
+    g.fillRect(36, 32, 2, 2);
+    g.generateTexture('road_button', W, H);
+    g.destroy();
   }
 
   private makeUnits(): void {

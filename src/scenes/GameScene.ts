@@ -57,6 +57,11 @@ export class GameScene extends Phaser.Scene {
   private selectedWorker: Worker | null = null;
   private placement: PlacementState | null = null;
   private touch!: TouchController;
+  // Road / decoration paint mode (P5). When on, taps + drags repaint
+  // grass <-> dirt-path tiles. Exclusive: no other tap dispatch fires.
+  private roadMode = false;
+  private roadPainting = false;
+  private tilemapLayer!: Phaser.Tilemaps.TilemapLayer | Phaser.Tilemaps.TilemapGPULayer;
 
   constructor() {
     super('Game');
@@ -76,6 +81,7 @@ export class GameScene extends Phaser.Scene {
     if (!tileset) throw new Error('failed to bind terrain tileset');
     const layer = map.createLayer(0, tileset, 0, 0);
     if (!layer) throw new Error('failed to create tilemap layer');
+    this.tilemapLayer = layer;
 
     const worldW = MAP_WIDTH_TILES * TILE_SIZE;
     const worldH = MAP_HEIGHT_TILES * TILE_SIZE;
@@ -108,6 +114,7 @@ export class GameScene extends Phaser.Scene {
     this.registry.set('popCap', 5);
     this.registry.set('pop', this.workers.length);
 
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
     this.input.on(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
     this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
     // UIScene's BUILD button emits this through the registry/scene events.
@@ -116,6 +123,7 @@ export class GameScene extends Phaser.Scene {
     ui.events.on('build-cancel', this.cancelPlacement, this);
     ui.events.on('train-unit', this.onTrainUnitRequest, this);
     ui.events.on('train-worker', this.onTrainWorkerRequest, this);
+    ui.events.on('road-toggle', this.toggleRoadMode, this);
     // Register once; per-placement handlers leaked in the 3b draft.
     this.events.on('building-constructed', this.onBuildingConstructed, this);
     this.events.on('unit-died', this.onUnitDied, this);
@@ -472,6 +480,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    if (this.roadMode) {
+      if (this.roadPainting) this.paintTileAtPointer(pointer);
+      return;
+    }
     if (!this.placement) return;
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const def = BUILDING_DEFS[this.placement.id];
@@ -582,7 +594,46 @@ export class GameScene extends Phaser.Scene {
 
   // ---------- input -----------------------------------------------------------
 
+  // Road-paint mode is exclusive: when on, no other tap dispatch fires.
+  // Toggling clears any in-flight placement / selection.
+  private toggleRoadMode(): void {
+    this.roadMode = !this.roadMode;
+    if (this.roadMode) {
+      this.cancelPlacement();
+      this.deselectAll();
+    } else {
+      this.roadPainting = false;
+    }
+  }
+
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (!this.roadMode) return;
+    if (this.touch.wasGesture) return;
+    this.roadPainting = true;
+    this.paintTileAtPointer(pointer);
+  }
+
+  private paintTileAtPointer(pointer: Phaser.Input.Pointer): void {
+    const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const tx = Math.floor(world.x / TILE_SIZE);
+    const ty = Math.floor(world.y / TILE_SIZE);
+    if (tx < 0 || ty < 0 || tx >= MAP_WIDTH_TILES || ty >= MAP_HEIGHT_TILES) return;
+    if (this.buildingTiles.has(this.tileKey(tx, ty))) return;
+    if (this.nodeTiles.has(this.tileKey(tx, ty))) return;
+    const cur = this.mapData[ty][tx];
+    // Only repaint grass <-> dirt path. Water / bridge / forest floor /
+    // stone-ground stay as-is to avoid breaking the map's structural look.
+    if (cur !== TILE.GRASS && cur !== TILE.DIRT_PATH) return;
+    const next = cur === TILE.DIRT_PATH ? TILE.GRASS : TILE.DIRT_PATH;
+    this.mapData[ty][tx] = next;
+    this.tilemapLayer.putTileAt(next, tx, ty);
+  }
+
   private onPointerUp(pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]): void {
+    if (this.roadMode) {
+      this.roadPainting = false;
+      return;
+    }
     if (this.touch.wasGesture) return;
     if (pointer.getDistance() > 10) return;
 
