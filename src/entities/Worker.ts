@@ -384,10 +384,57 @@ export class Worker {
     }
   }
 
+  // Send the worker home: drop any cargo at the Town Hall, then go idle
+  // (instead of auto-chaining to another resource). Used by the worker
+  // selection panel's "Send home" button.
+  sendHome(): void {
+    this.releaseBuildingSlot();
+    this.autoMode = null;
+    this.autoResource = null;
+    this.pendingFarmAfterDeposit = null;
+    if (this.inventoryAmount > 0) {
+      this.startMoveToDropoff(null);
+    } else {
+      this.state = { kind: 'idle' };
+      this.path = [];
+    }
+  }
+
+  // Friendly status string for the worker selection panel.
+  getStatusText(): string {
+    switch (this.state.kind) {
+      case 'idle':
+        return 'Idle';
+      case 'moving-to-node':
+        return verbForResource(this.state.node.resource, 'going');
+      case 'gathering':
+        return verbForResource(this.state.node.resource, 'doing');
+      case 'moving-to-dropoff':
+        return 'Returning';
+      case 'depositing':
+        return 'Depositing';
+      case 'moving-to-site':
+        return `Going to build ${this.state.site.def.name}`;
+      case 'building':
+        return `Building ${this.state.site.def.name}`;
+      case 'moving-to-farm':
+        return 'Heading to farm';
+      case 'tending':
+        return 'Tending farm';
+    }
+  }
+
   destroy(): void {
     this.sprite.destroy();
     this.ring.destroy();
   }
+}
+
+function verbForResource(r: ResourceType, mode: 'going' | 'doing'): string {
+  if (mode === 'going') {
+    return r === 'wood' ? 'Heading to chop' : r === 'stone' ? 'Heading to mine' : 'Heading to forage';
+  }
+  return r === 'wood' ? 'Chopping wood' : r === 'stone' ? 'Mining stone' : 'Gathering food';
 }
 
 function pathToWaypoints(path: TileXY[]): { x: number; y: number }[] {

@@ -279,65 +279,83 @@ export class GameScene extends Phaser.Scene {
     }
 
     const rng = Phaser.Math.RND;
-    rng.sow(['phase-4-clusters']);
+    rng.sow(['phase-4-clusters-v2']);
 
-    // Forests: 5 dense clumps of 25–35 trees within radius 6.
-    for (let f = 0; f < 5; f++) {
-      const cx = rng.between(3, MAP_WIDTH_TILES - 4);
-      const cy = rng.between(3, MAP_HEIGHT_TILES - 4);
-      const target = rng.between(25, 35);
-      this.scatterCluster(rng, 'tree', cx, cy, 6, target, reserved);
-    }
-    // Plus a sprinkling of lone trees outside forests for AoM-feel.
-    for (let i = 0; i < 25; i++) {
-      const tx = rng.between(0, MAP_WIDTH_TILES - 1);
-      const ty = rng.between(0, MAP_HEIGHT_TILES - 1);
-      this.tryPlace('tree', tx, ty, reserved);
+    // Forests: 6 dense forest blobs. Per-tile probabilistic placement
+    // (instead of random scatter, which left visible "row" patterns and
+    // sparse clumps). Density falls smoothly from centre to edge so the
+    // silhouette reads as a real forest, not a circle of trees.
+    for (let f = 0; f < 6; f++) {
+      const cx = rng.between(4, MAP_WIDTH_TILES - 5);
+      const cy = rng.between(4, MAP_HEIGHT_TILES - 5);
+      this.fillForest(rng, cx, cy, /*radius*/ rng.between(4, 6), reserved);
     }
 
-    // Rock clusters: 4 quarry-like clumps of 4–8 rocks.
+    // Rock cluster quarries: 4 blobs of 5-9 rocks each.
     for (let r = 0; r < 4; r++) {
       const cx = rng.between(2, MAP_WIDTH_TILES - 3);
       const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
-      this.scatterCluster(rng, 'rock', cx, cy, 3, rng.between(4, 8), reserved);
+      this.fillBlob(rng, 'rock', cx, cy, 2, 0.65, reserved);
     }
 
-    // Berry patches: 6 small clumps of 3–5 bushes.
+    // Berry patches: 6 small clumps.
     for (let b = 0; b < 6; b++) {
       const cx = rng.between(2, MAP_WIDTH_TILES - 3);
       const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
-      this.scatterCluster(rng, 'bush', cx, cy, 2, rng.between(3, 5), reserved);
+      this.fillBlob(rng, 'bush', cx, cy, 2, 0.5, reserved);
     }
 
-    // Deer herds: 4 small herds of 2–3.
+    // Sheep herds: 4 small grazing groups.
     for (let d = 0; d < 4; d++) {
       const cx = rng.between(2, MAP_WIDTH_TILES - 3);
       const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
-      this.scatterCluster(rng, 'animal', cx, cy, 3, rng.between(2, 3), reserved);
+      this.fillBlob(rng, 'animal', cx, cy, 2, 0.35, reserved);
     }
   }
 
-  // Place up to `target` nodes of `kind` around (cx,cy) within `radius`
-  // tiles. Uses a √r distribution so clusters look denser at the centre
-  // and feather out at the edges (AoM forest silhouette).
-  private scatterCluster(
+  // Iterates every tile in a circle and places a tree probabilistically
+  // by distance — dense at the centre, feathered at the edges. Produces
+  // genuinely forest-shaped clumps instead of the "ring of trees" look.
+  private fillForest(
+    rng: Phaser.Math.RandomDataGenerator,
+    cx: number,
+    cy: number,
+    radius: number,
+    reserved: Set<number>,
+  ): void {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+        // 90% chance at centre, fading to ~30% at the edge.
+        const density = 1 - dist / radius;
+        const chance = 0.3 + 0.6 * density;
+        if (rng.frac() < chance) {
+          this.tryPlace('tree', cx + dx, cy + dy, reserved);
+        }
+      }
+    }
+  }
+
+  // Generic tile-grid blob placement for non-tree clusters with a uniform
+  // chance per tile — works well for small rock/bush/herd clumps.
+  private fillBlob(
     rng: Phaser.Math.RandomDataGenerator,
     kind: NodeKind,
     cx: number,
     cy: number,
     radius: number,
-    target: number,
+    chance: number,
     reserved: Set<number>,
   ): void {
-    let placed = 0;
-    let attempts = 0;
-    while (placed < target && attempts < target * 4) {
-      attempts += 1;
-      const angle = rng.frac() * Math.PI * 2;
-      const r = Math.sqrt(rng.frac()) * radius;
-      const tx = Math.round(cx + Math.cos(angle) * r);
-      const ty = Math.round(cy + Math.sin(angle) * r);
-      if (this.tryPlace(kind, tx, ty, reserved)) placed += 1;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
+        if (rng.frac() < chance) {
+          this.tryPlace(kind, cx + dx, cy + dy, reserved);
+        }
+      }
     }
   }
 
