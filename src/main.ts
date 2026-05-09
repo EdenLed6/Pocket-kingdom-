@@ -3,10 +3,6 @@ import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
-import { diag } from './utils/diag';
-
-(window as unknown as { __phaserSeen?: boolean }).__phaserSeen = true;
-diag(`phaser version: ${Phaser.VERSION}`, 'ok');
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -22,12 +18,4 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, PreloadScene, GameScene, UIScene],
 };
 
-try {
-  const game = new Phaser.Game(config);
-  game.events.once(Phaser.Core.Events.READY, () => {
-    diag(`game ready (renderer=${game.renderer.type === 1 ? 'CANVAS' : 'WEBGL'})`, 'ok');
-  });
-} catch (err) {
-  diag(`game ctor threw: ${(err as Error).message}`, 'err');
-  throw err;
-}
+new Phaser.Game(config);

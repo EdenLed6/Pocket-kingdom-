@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { TILE_COLORS, TILE_SIZE } from '../data/tiles';
-import { diag } from '../utils/diag';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -8,25 +7,11 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    diag('PreloadScene.preload: loading main_map', 'ok');
     this.load.json('main_map', 'assets/tilemaps/main.json');
-    this.load.on('loaderror', (file: Phaser.Loader.File) => {
-      diag(`load FAIL: key=${file.key} url=${file.url}`, 'err');
-    });
-    this.load.on('complete', () => {
-      diag('PreloadScene loader complete', 'ok');
-    });
   }
 
   create(): void {
-    try {
-      this.generateTerrainTexture();
-      diag('terrain texture generated', 'ok');
-    } catch (err) {
-      diag(`terrain gen threw: ${(err as Error).message}`, 'err');
-      throw err;
-    }
-    diag('PreloadScene.create -> Game + UI', 'ok');
+    this.generateTerrainTexture();
     this.scene.start('Game');
     this.scene.launch('UI');
   }

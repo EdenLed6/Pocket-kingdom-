@@ -33,61 +33,43 @@
         right: 0;
         z-index: 999;
         background: rgba(0, 0, 0, 0.85);
-        color: #fff;
+        color: #ff8080;
         font: 12px/1.4 ui-monospace, monospace;
         padding: 6px 8px;
         max-height: 50vh;
         overflow: auto;
         white-space: pre-wrap;
         word-break: break-word;
+        display: none;
       }
-      #diag.empty { display: none; }
-      #diag .err { color: #ff8080; }
-      #diag .ok  { color: #80ff80; }
     </style>
   </head>
   <body>
     <div id="game"></div>
-    <div id="diag" class="empty"></div>
+    <div id="diag"></div>
     <script>
-      // Visible diagnostic overlay so problems show up on a phone without devtools.
+      // Silent error overlay: invisible until something breaks. Catches both
+      // window errors and asset/script load failures (capture-phase).
       (function () {
         var box = document.getElementById('diag');
-        function line(text, cls) {
-          box.classList.remove('empty');
+        function line(text) {
+          box.style.display = 'block';
           var d = document.createElement('div');
-          if (cls) d.className = cls;
           d.textContent = text;
           box.appendChild(d);
         }
-        window.__diag = line;
-        line('boot ' + new Date().toISOString(), 'ok');
-        line('ua ' + navigator.userAgent);
-        line('href ' + location.href);
         window.addEventListener('error', function (e) {
           var t = e.target || {};
           var src = t.src || t.href;
           if (src) {
-            line('ASSET ERR ' + t.tagName + ' ' + src, 'err');
+            line('ASSET ' + t.tagName + ' ' + src);
           } else {
-            line('ERR ' + (e.message || e.error) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), 'err');
+            line('ERR ' + (e.message || e.error) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'));
           }
         }, true);
         window.addEventListener('unhandledrejection', function (e) {
-          line('REJ ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)), 'err');
+          line('REJ ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)));
         });
-        // Probe the bundle URL directly so we can see if it 404s.
-        var bundleUrl = new URL('./assets/main.js', location.href).href;
-        line('probe ' + bundleUrl);
-        fetch(bundleUrl, { method: 'GET' }).then(function (r) {
-          line('probe -> HTTP ' + r.status + ' ' + r.headers.get('content-type'), r.ok ? 'ok' : 'err');
-        }).catch(function (err) {
-          line('probe FAIL ' + err.message, 'err');
-        });
-        // After 4s, if Phaser hasn't reported in, say so loudly.
-        setTimeout(function () {
-          if (!window.__phaserSeen) line('TIMEOUT: bundle never executed', 'err');
-        }, 4000);
       })();
     </script>
     <script type="module" src="/src/main.ts"></script>
