@@ -11,7 +11,7 @@
 
 מסמך זה הוא מפרט הבנייה המלא של המשחק. הוא כתוב באנגלית כי הוא ניתן ל-Claude Code כקלט ראשי, וזה התחביר שעובד הכי טוב לקוד.
 ההחלטות הטכניות נלקחו לפי ההיסטוריה שלך: Web stack שאת מכירה (TypeScript / Vite) + Capacitor ל-Android, אותו דפוס ש-Claude Code בנה לפניו אצלך.
-**הסטאק:** Phaser 3 + TypeScript + Vite + Capacitor.
+**הסטאק:** Phaser 4 + TypeScript + Vite + Capacitor.
 **האסטרטגיה:** לבנות בשלבים (Phase 0–7), כל שלב מסתיים במשחק שעובד ניתן להרצה — לא לבנות הכל ואז לבדוק.
 
 ---
@@ -24,11 +24,12 @@ Read this entire spec **before writing any code**. Do not skim.
 1. **Build in phases.** Do not start Phase N+1 until Phase N is fully runnable on a desktop browser. Each phase ends in a working, testable game state.
 2. **Confirm before installing.** Before running `npm install` for any dependency not listed in §2, stop and ask the user.
 3. **Ask clarifying questions at decision points** (marked `[DECISION POINT]` throughout this spec). Do not invent answers.
-4. **Verify Phaser 3 APIs before using them.** If unsure about a method signature, fetch the Phaser 3 docs page rather than guessing.
-5. **Mobile-first.** All UI must be designed for a portrait phone screen first (≈ 1080×1920 logical). Desktop is for development only.
-6. **Pixel-perfect rendering.** Use `pixelArt: true` in Phaser config. Never anti-alias sprites.
-7. **No premature optimization.** Get the system working, then profile.
-8. **Save work-in-progress with git after every phase.** Commit message format: `phase-{N}: {summary}`.
+4. **Verify Phaser 4 APIs before using them.** If unsure about a method signature, fetch the Phaser 4 docs page rather than guessing.
+5. **Use the Phaser 4 AI agent skills.** Phaser 4 ships with a `skills/` folder containing 28 skill files purpose-built for AI coding agents. Before implementing any Phaser subsystem (Scenes, Tilemaps, Input, Tweens, Cameras, Physics, GameObjects, Audio, etc.), read the matching skill file from `node_modules/phaser/skills/` (or the GitHub repo). This is non-negotiable — these skills exist precisely for this workflow.
+6. **Mobile-first.** All UI must be designed for a portrait phone screen first (≈ 1080×1920 logical). Desktop is for development only.
+7. **Pixel-perfect rendering.** Use `pixelArt: true` in Phaser config. Never anti-alias sprites.
+8. **No premature optimization.** Get the system working, then profile.
+9. **Save work-in-progress with git after every phase.** Commit message format: `phase-{N}: {summary}`.
 
 **Soft rules:**
 - Comments in code: English. Short and explanatory, not narrating obvious code.
@@ -92,24 +93,26 @@ These are tracked in §12 (Stretch Goals).
 ### 2.1 Core Stack (do not deviate without asking)
 | Layer | Choice | Why |
 |---|---|---|
-| Language | **TypeScript** | Type safety for game state, matches Eden's stack. |
-| Game engine | **Phaser 3.80+** | Mature 2D engine, excellent pixel-art support, large community, mobile-friendly. |
-| Bundler | **Vite** | Fast HMR, simple config, native TS support. |
-| Mobile wrap | **Capacitor 6+** | Wraps web app as native Android app, easy to maintain. |
+| Language | **TypeScript 6+** | Type safety for game state. (TS 7 is in beta — Go-based, 10× faster, but stick with stable 6.) |
+| Game engine | **Phaser 4.1+** | Latest major release (Apr 2026). New WebGL renderer, mostly compatible API with v3. **Critical:** ships with 28 AI-agent skill files designed for tools exactly like Claude Code. |
+| Bundler | **Vite 8+** | Fast HMR, native TS support. v8 (Mar 2026) uses Rolldown internally — faster builds, mostly drop-in compatible. |
+| Mobile wrap | **Capacitor 8+** | Wraps web app as native Android app. **Requires Node 22+** and Android Studio Otter (2025.2.1) or newer. |
 | State | **Plain TS classes + event emitter** | No Redux/Zustand needed; Phaser scenes own their state. |
 | Persistence | **localStorage** (MVP) → **Capacitor Preferences plugin** (release) | Simple, no backend needed. |
 | Audio | **Phaser built-in audio** | Sufficient for MVP. |
 
 ### 2.2 Dev Dependencies (install in Phase 0)
 ```
-phaser            ^3.80.0
-typescript        ^5.4.0
-vite              ^5.0.0
-@capacitor/core   ^6.0.0
-@capacitor/cli    ^6.0.0
-@capacitor/android ^6.0.0
-@capacitor/preferences ^6.0.0
+phaser                    ^4.1.0
+typescript                ^6.0.0
+vite                      ^8.0.0
+@capacitor/core           ^8.3.0
+@capacitor/cli            ^8.3.0
+@capacitor/android        ^8.3.0
+@capacitor/preferences    ^8.0.0
 ```
+
+> Versions reflect May 2026. Always run `npm install <pkg>@latest` for each — do not pin older majors. If `npm install phaser@latest` resolves to anything below 4.0, stop and ask the user.
 
 ### 2.3 Project Structure
 ```
@@ -168,6 +171,18 @@ pocket-kingdom/
 ---
 
 ## 3. Project Setup (Phase 0)
+
+### 3.1 Environment Requirements
+
+Before running any commands, verify:
+- **Node.js ≥ 22** (Capacitor 8 requires it). Check: `node -v`.
+- **Android Studio Otter (2025.2.1)** or newer.
+- **JDK 21** (ships with Android Studio Otter, no separate install needed).
+- **Android SDK:** minSdk 24, compileSdk 36, targetSdk 36.
+
+If Eden's machine doesn't meet these, stop and tell her exactly what to upgrade.
+
+### 3.2 Setup Commands
 
 ```bash
 npm create vite@latest pocket-kingdom -- --template vanilla-ts
@@ -720,9 +735,16 @@ npx cap open android           # opens Android Studio
 ```
 
 In Android Studio:
-1. Let Gradle sync.
+1. Let Gradle sync (may need AGP Upgrade Assistant: `Tools → AGP Upgrade Assistant` → version `8.13.0+`).
 2. Connect phone via USB (USB debugging enabled), or use emulator.
 3. Click ▶ Run.
+
+**Capacitor 8 Android requirements** (`android/variables.gradle`):
+```
+minSdkVersion = 24
+compileSdkVersion = 36
+targetSdkVersion = 36
+```
 
 For production APK / AAB:
 1. Android Studio → Build → Generate Signed Bundle / APK.
@@ -831,10 +853,11 @@ Tune these after Phase 5 playtesting. Do not pre-tune.
 
 When stuck, in this order:
 1. Re-read §0 (Prime Directive).
-2. Re-read the relevant §6 system spec.
-3. Re-read the data model in §5.
-4. Check Phaser 3 docs (https://newdocs.phaser.io/) for API specifics.
-5. If still stuck → stop and ask Eden.
+2. **Read the matching Phaser 4 skill file** in `node_modules/phaser/skills/` for whichever subsystem you're working on.
+3. Re-read the relevant §6 system spec.
+4. Re-read the data model in §5.
+5. Check Phaser 4 docs (https://docs.phaser.io/) for API specifics.
+6. If still stuck → stop and ask Eden.
 
 When tempted to add a feature not in §1.4 (MVP scope) → don't. Add it to §12 instead.
 
