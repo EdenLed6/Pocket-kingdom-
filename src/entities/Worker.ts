@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { TILE_SIZE } from '../data/tiles';
-import { BALANCE } from '../data/balance';
+import { BALANCE, type ResourceType } from '../data/balance';
 import { findPath, type TileXY } from '../utils/pathfinding';
-import type { Tree } from './Tree';
+import type { ResourceNode } from './ResourceNode';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -10,25 +10,33 @@ interface WorkerDeps {
   mapWidthTiles: number;
   mapHeightTiles: number;
   isWalkable: IsWalkable;
-  // Resolves the tile a fully-loaded worker should walk back to. For Phase 2
-  // this is the tile just south of the Town Hall (only dropoff in the world).
+  // Resolves the tile a fully-loaded worker should walk back to. For Phase 3
+  // this is still the tile just south of the Town Hall (only dropoff).
   getDropoffTile: () => TileXY;
   // Called when the worker actually deposits cargo at the dropoff. Returns
   // how much was accepted (resource cap may clip it).
-  depositWood: (amount: number) => number;
-  // Find another tree to chain to once the assigned one is stumped. May
-  // return null when nothing is available.
-  findNearestTree: (fromX: number, fromY: number) => Tree | null;
+  deposit: (resource: ResourceType, amount: number) => number;
+  // Find another node of the same resource type to chain to once the
+  // current one is exhausted. May return null when nothing is available.
+  findNearestNode: (
+    fromX: number,
+    fromY: number,
+    resource: ResourceType,
+  ) => ResourceNode | null;
 }
 
 type State =
   | { kind: 'idle' }
-  | { kind: 'moving-to-tree'; tree: Tree }
-  | { kind: 'gathering'; tree: Tree; remainingSec: number }
-  | { kind: 'moving-to-dropoff'; afterTree: Tree | null }
+  | { kind: 'moving-to-node'; node: ResourceNode }
+  | { kind: 'gathering'; node: ResourceNode; remainingSec: number }
+  | { kind: 'moving-to-dropoff'; afterNode: ResourceNode | null }
   | { kind: 'depositing' };
 
-const CARRY_TINT = 0xc8ffb0;
+const CARRY_TINT_BY_RESOURCE: Record<ResourceType, number> = {
+  wood: 0xc8ffb0,
+  stone: 0xb0c0d0,
+  food: 0xffd070,
+};
 
 export class Worker {
   readonly id: number;
@@ -36,12 +44,14 @@ export class Worker {
   private sprite: Phaser.GameObjects.Sprite;
   private ring: Phaser.GameObjects.Sprite;
   private state: State = { kind: 'idle' };
-  private inventoryWood = 0;
+  private inventoryAmount = 0;
+  private inventoryResource: ResourceType | null = null;
   private path: { x: number; y: number }[] = [];
   private _selected = false;
-  // Once the player gives a worker any tree, it keeps gathering nearby
-  // trees after each drop-off. Cleared only when nothing is available.
-  private autoGather = false;
+  // Once the player gives a worker any node, it keeps gathering nearby
+  // nodes of the same resource type after each drop-off. Cleared only
+  // when nothing is available.
+  private autoResource: ResourceType | null = null;
 
   constructor(id: number, scene: Phaser.Scene, tileX: number, tileY: number, deps: WorkerDeps) {
     this.id = id;
@@ -87,35 +97,39 @@ export class Worker {
     this.ring.setVisible(value);
   }
 
-  // Player command: gather from this tree, then drop off, then auto-continue
-  // to nearby trees until told otherwise (or none remain).
-  assignTree(tree: Tree): void {
-    this.autoGather = true;
-    if (!tree.isAvailable) {
+  // Player command: gather from this node, then drop off, then auto-continue
+  // to nearby nodes of the same resource type until told otherwise.
+  assignNode(node: ResourceNode): void {
+    this.autoResource = node.resource;
+    if (!node.isAvailable) {
       this.chainToNearest();
       return;
     }
-    if (this.inventoryWood > 0) {
-      // Already carrying: deliver first, then come back to this tree.
-      this.startMoveToDropoff(tree);
+    if (this.inventoryAmount > 0 && this.inventoryResource !== node.resource) {
+      // Holding the wrong resource: drop off first, then try to chain.
+      this.startMoveToDropoff(null);
       return;
     }
-    this.startMoveToTree(tree);
+    if (this.inventoryAmount >= BALANCE.worker.carryCapacity) {
+      this.startMoveToDropoff(node);
+      return;
+    }
+    this.startMoveToNode(node);
   }
 
-  private startMoveToTree(tree: Tree): void {
-    const path = this.computePath({ tx: tree.tileX, ty: tree.tileY });
+  private startMoveToNode(node: ResourceNode): void {
+    const path = this.computePath({ tx: node.tileX, ty: node.tileY });
     if (!path) return;
     this.path = pathToWaypoints(path);
-    this.state = { kind: 'moving-to-tree', tree };
+    this.state = { kind: 'moving-to-node', node };
   }
 
-  private startMoveToDropoff(afterTree: Tree | null): void {
+  private startMoveToDropoff(afterNode: ResourceNode | null): void {
     const dropoff = this.deps.getDropoffTile();
     const path = this.computePath(dropoff);
     if (!path) return;
     this.path = pathToWaypoints(path);
-    this.state = { kind: 'moving-to-dropoff', afterTree };
+    this.state = { kind: 'moving-to-dropoff', afterNode };
   }
 
   private computePath(goal: TileXY): TileXY[] | null {
@@ -130,22 +144,20 @@ export class Worker {
   }
 
   private chainToNearest(): void {
-    if (!this.autoGather) {
+    if (!this.autoResource) {
       this.state = { kind: 'idle' };
       return;
     }
-    const next = this.deps.findNearestTree(this.sprite.x, this.sprite.y);
+    const next = this.deps.findNearestNode(this.sprite.x, this.sprite.y, this.autoResource);
     if (next) {
-      this.startMoveToTree(next);
+      this.startMoveToNode(next);
     } else {
-      this.autoGather = false;
+      this.autoResource = null;
       this.state = { kind: 'idle' };
     }
   }
 
   update(dtSec: number): void {
-    // Keep ring under the worker's feet and depth-sorted with body so trees
-    // overlap correctly as the worker walks past them.
     if (this._selected) {
       this.ring.setPosition(this.sprite.x, this.sprite.y + 4);
     }
@@ -156,7 +168,7 @@ export class Worker {
       case 'idle':
         return;
 
-      case 'moving-to-tree':
+      case 'moving-to-node':
       case 'moving-to-dropoff':
         this.advanceAlongPath(dtSec);
         return;
@@ -164,10 +176,11 @@ export class Worker {
       case 'gathering': {
         this.state.remainingSec -= dtSec;
         if (this.state.remainingSec <= 0) {
-          const tree = this.state.tree;
-          const yield_ = tree.harvest();
-          this.inventoryWood += yield_;
-          this.sprite.setTint(CARRY_TINT);
+          const node = this.state.node;
+          const yield_ = node.harvest();
+          this.inventoryAmount += yield_;
+          this.inventoryResource = node.resource;
+          this.sprite.setTint(CARRY_TINT_BY_RESOURCE[node.resource]);
           this.startMoveToDropoff(null);
         }
         return;
@@ -203,33 +216,33 @@ export class Worker {
   }
 
   private onArrived(): void {
-    if (this.state.kind === 'moving-to-tree') {
-      const tree = this.state.tree;
-      if (!tree.isAvailable) {
+    if (this.state.kind === 'moving-to-node') {
+      const node = this.state.node;
+      if (!node.isAvailable) {
         this.chainToNearest();
         return;
       }
       this.state = {
         kind: 'gathering',
-        tree,
-        remainingSec: BALANCE.worker.gatherTimeSec.wood,
+        node,
+        remainingSec: node.gatherTimeSec,
       };
       return;
     }
 
     if (this.state.kind === 'moving-to-dropoff') {
-      const afterTree = this.state.afterTree;
+      const afterNode = this.state.afterNode;
       this.state = { kind: 'depositing' };
-      const accepted = this.deps.depositWood(this.inventoryWood);
-      this.inventoryWood = Math.max(0, this.inventoryWood - accepted);
+      if (this.inventoryResource && this.inventoryAmount > 0) {
+        const accepted = this.deps.deposit(this.inventoryResource, this.inventoryAmount);
+        this.inventoryAmount = Math.max(0, this.inventoryAmount - accepted);
+        if (this.inventoryAmount === 0) this.inventoryResource = null;
+      }
       this.sprite.clearTint();
 
-      if (afterTree && afterTree.isAvailable && this.inventoryWood === 0) {
-        this.startMoveToTree(afterTree);
+      if (afterNode && afterNode.isAvailable && this.inventoryAmount === 0) {
+        this.startMoveToNode(afterNode);
       } else {
-        // Either the assigned tree is gone or we still have unflushed wood
-        // (storage cap). Either way: try to chain. If cap was hit, this just
-        // sends us back out; the next deposit will be 0 and we'll keep trying.
         this.chainToNearest();
       }
     }

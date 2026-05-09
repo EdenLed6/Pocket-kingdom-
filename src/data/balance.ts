@@ -46,9 +46,13 @@ export const BALANCE = {
     recomputeIntervalSec: 5,
   },
 
-  // Phase 2 specific (not in spec, can move later).
-  tree: {
-    regrowSec: 180,
+  // Per §4.5: regrow / respawn cadence for resource nodes.
+  nodes: {
+    treeRegrowSec: 180,
+    bushRegrowSec: 60,
+    animalRespawnSec: 120,
+    // Stone outcrops do NOT regrow; new ones spawn at edges (§4.5). Phase 3
+    // initial set is static; edge respawn is deferred.
   },
 
   // Town Hall placeholder position (tile coords for the top-left of the 3x3
@@ -61,3 +65,11 @@ export const BALANCE = {
 } as const;
 
 export type ResourceType = 'wood' | 'stone' | 'food';
+export type NodeKind = 'tree' | 'rock' | 'bush' | 'animal';
+
+export const NODE_TO_RESOURCE: Record<NodeKind, ResourceType> = {
+  tree: 'wood',
+  rock: 'stone',
+  bush: 'food',
+  animal: 'food',
+};

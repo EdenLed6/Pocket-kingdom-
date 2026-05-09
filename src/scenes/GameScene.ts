@@ -6,8 +6,8 @@ import {
   TILE,
   TILE_SIZE,
 } from '../data/tiles';
-import { BALANCE } from '../data/balance';
-import { Tree } from '../entities/Tree';
+import { BALANCE, NODE_TO_RESOURCE, type NodeKind, type ResourceType } from '../data/balance';
+import { ResourceNode } from '../entities/ResourceNode';
 import { Worker } from '../entities/Worker';
 import type { TileXY } from '../utils/pathfinding';
 
@@ -19,12 +19,20 @@ interface MapJson {
   data: number[][];
 }
 
-const REGISTRY_WOOD = 'wood';
-const REGISTRY_WOOD_CAP = 'woodCap';
+const REGISTRY_KEY: Record<ResourceType, string> = {
+  wood: 'wood',
+  stone: 'stone',
+  food: 'food',
+};
+const REGISTRY_CAP_KEY: Record<ResourceType, string> = {
+  wood: 'woodCap',
+  stone: 'stoneCap',
+  food: 'foodCap',
+};
 
 export class GameScene extends Phaser.Scene {
   private mapData: number[][] = [];
-  private trees: Tree[] = [];
+  private nodes: ResourceNode[] = [];
   private workers: Worker[] = [];
   private selectedWorker: Worker | null = null;
   private touch!: TouchController;
@@ -53,21 +61,25 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, worldW, worldH);
 
     this.spawnTownHall();
-    this.spawnTrees();
+    this.spawnNodes();
     this.spawnWorkers();
 
-    // Center on the Town Hall so the player sees their village immediately.
     const th = BALANCE.townHall;
     const thCenterX = (th.tileX + th.sizeTiles / 2) * TILE_SIZE;
     const thCenterY = (th.tileY + th.sizeTiles / 2) * TILE_SIZE;
     this.cameras.main.centerOn(thCenterX, thCenterY);
 
-    // §7.5: zoom range 0.7×–2.0×. Controller self-cleans on scene shutdown.
     this.touch = new TouchController(this, { minZoom: 0.7, maxZoom: 2.0 });
 
     // Initialise resource counters via the registry so UIScene can listen.
-    this.registry.set(REGISTRY_WOOD, BALANCE.startingResources.wood);
-    this.registry.set(REGISTRY_WOOD_CAP, BALANCE.storage.initialCap.wood);
+    const start = BALANCE.startingResources;
+    const cap = BALANCE.storage.initialCap;
+    this.registry.set(REGISTRY_KEY.wood, start.wood);
+    this.registry.set(REGISTRY_KEY.stone, start.stone);
+    this.registry.set(REGISTRY_KEY.food, start.food);
+    this.registry.set(REGISTRY_CAP_KEY.wood, cap.wood);
+    this.registry.set(REGISTRY_CAP_KEY.stone, cap.stone);
+    this.registry.set(REGISTRY_CAP_KEY.food, cap.food);
 
     this.input.on(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
   }
@@ -82,17 +94,15 @@ export class GameScene extends Phaser.Scene {
     const sizePx = th.sizeTiles * TILE_SIZE;
     const cx = th.tileX * TILE_SIZE + sizePx / 2;
     const cy = th.tileY * TILE_SIZE + sizePx / 2;
-    // Origin at base so the roof rises above the footprint and the bottom
-    // sits exactly on the south edge of the 3×3 tile area.
     this.add
       .sprite(cx, cy + sizePx / 2, 'town-hall')
       .setOrigin(0.5, 1)
       .setDepth(cy + sizePx / 2);
   }
 
-  private spawnTrees(): void {
-    // Phase 2: ~5% of grass tiles (lower than spec's 25% for visibility).
-    // Skip tiles inside the Town Hall footprint and worker spawn area.
+  private spawnNodes(): void {
+    // Reserve the area inside / immediately around the Town Hall so spawn
+    // tiles and dropoff are clear of resource nodes.
     const occupied = new Set<number>();
     const th = BALANCE.townHall;
     for (let dy = -1; dy <= th.sizeTiles + 1; dy++) {
@@ -100,14 +110,32 @@ export class GameScene extends Phaser.Scene {
         occupied.add((th.tileY + dy) * 4096 + (th.tileX + dx));
       }
     }
+
+    // Per §4.5 ratios (tuned down for Phase 3 readability of the placeholder
+    // art): trees ~5%, rocks ~1.5%, bushes ~1%, animals ~0.4%.
+    type Plan = { kind: NodeKind; chance: number };
+    const plan: Plan[] = [
+      { kind: 'tree', chance: 0.05 },
+      { kind: 'rock', chance: 0.015 },
+      { kind: 'bush', chance: 0.01 },
+      { kind: 'animal', chance: 0.004 },
+    ];
     const rng = Phaser.Math.RND;
-    rng.sow(['phase-2-trees']);
+    rng.sow(['phase-3-nodes']);
+
     for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
       for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
         if (occupied.has(ty * 4096 + tx)) continue;
         if (this.mapData[ty][tx] !== TILE.GRASS) continue;
-        if (rng.frac() < 0.05) {
-          this.trees.push(new Tree(this, tx, ty));
+        const r = rng.frac();
+        let acc = 0;
+        for (const p of plan) {
+          acc += p.chance;
+          if (r < acc) {
+            this.nodes.push(new ResourceNode(this, p.kind, tx, ty));
+            occupied.add(ty * 4096 + tx);
+            break;
+          }
         }
       }
     }
@@ -115,7 +143,6 @@ export class GameScene extends Phaser.Scene {
 
   private spawnWorkers(): void {
     const th = BALANCE.townHall;
-    // Three spawn tiles just south of the Town Hall.
     const spawnTiles: TileXY[] = [
       { tx: th.tileX, ty: th.tileY + th.sizeTiles },
       { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles },
@@ -126,8 +153,8 @@ export class GameScene extends Phaser.Scene {
       mapHeightTiles: MAP_HEIGHT_TILES,
       isWalkable: this.isWalkable.bind(this),
       getDropoffTile: this.getDropoffTile.bind(this),
-      depositWood: this.depositWood.bind(this),
-      findNearestTree: this.findNearestTree.bind(this),
+      deposit: this.deposit.bind(this),
+      findNearestNode: this.findNearestNode.bind(this),
     };
     for (let i = 0; i < BALANCE.startingWorkers; i++) {
       this.workers.push(new Worker(i, this, spawnTiles[i].tx, spawnTiles[i].ty, deps));
@@ -141,43 +168,44 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  // Workers drop wood at the south-center tile of the Town Hall footprint.
   private getDropoffTile(): TileXY {
     const th = BALANCE.townHall;
     return { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles };
   }
 
-  private findNearestTree(fromX: number, fromY: number): Tree | null {
-    let best: Tree | null = null;
+  private findNearestNode(fromX: number, fromY: number, resource: ResourceType): ResourceNode | null {
+    let best: ResourceNode | null = null;
     let bestDistSq = Infinity;
-    for (const t of this.trees) {
-      if (!t.isAvailable) continue;
-      const dx = t.worldX - fromX;
-      const dy = t.worldY - fromY;
+    for (const n of this.nodes) {
+      if (!n.isAvailable) continue;
+      if (NODE_TO_RESOURCE[n.kind] !== resource) continue;
+      const dx = n.worldX - fromX;
+      const dy = n.worldY - fromY;
       const distSq = dx * dx + dy * dy;
       if (distSq < bestDistSq) {
-        best = t;
+        best = n;
         bestDistSq = distSq;
       }
     }
     return best;
   }
 
-  private depositWood(amount: number): number {
-    const cap = (this.registry.get(REGISTRY_WOOD_CAP) as number) ?? BALANCE.storage.initialCap.wood;
-    const cur = (this.registry.get(REGISTRY_WOOD) as number) ?? 0;
+  private deposit(resource: ResourceType, amount: number): number {
+    const capKey = REGISTRY_CAP_KEY[resource];
+    const valKey = REGISTRY_KEY[resource];
+    const cap = (this.registry.get(capKey) as number) ?? 0;
+    const cur = (this.registry.get(valKey) as number) ?? 0;
     const accepted = Math.min(amount, Math.max(0, cap - cur));
-    this.registry.set(REGISTRY_WOOD, cur + accepted);
+    this.registry.set(valKey, cur + accepted);
     return accepted;
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]): void {
-    // §7.5: tap vs drag. The TouchController already tracks gesture state.
     if (this.touch.wasGesture) return;
     if (pointer.getDistance() > 10) return;
 
     const obj = currentlyOver.find(
-      (o) => o.getData && (o.getData('kind') === 'worker' || o.getData('kind') === 'tree'),
+      (o) => o.getData && (o.getData('kind') === 'worker' || o.getData('kind') === 'node'),
     );
     if (!obj) {
       this.deselect();
@@ -196,10 +224,10 @@ export class GameScene extends Phaser.Scene {
       }
       return;
     }
-    if (kind === 'tree') {
-      const tree = obj.getData('tree') as Tree;
+    if (kind === 'node') {
+      const node = obj.getData('node') as ResourceNode;
       if (this.selectedWorker) {
-        this.selectedWorker.assignTree(tree);
+        this.selectedWorker.assignNode(node);
       }
       return;
     }

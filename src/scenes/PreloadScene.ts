@@ -38,6 +38,10 @@ export class PreloadScene extends Phaser.Scene {
   private generateGameTextures(): void {
     this.makeTree();
     this.makeStump();
+    this.makeRock();
+    this.makeBush();
+    this.makeBushBare();
+    this.makeDeer();
     this.makeWorker();
     this.makeTownHall();
     this.makeSelectRing();
@@ -75,6 +79,103 @@ export class PreloadScene extends Phaser.Scene {
     g.fillStyle(0xa07840, 1);
     g.fillCircle(16, 22, 4);
     g.generateTexture('tree-stump', 32, 36);
+    g.destroy();
+  }
+
+  private makeRock(): void {
+    const W = 32;
+    const H = 28;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // Base shadow blob.
+    g.fillStyle(0x4a4a52, 1);
+    g.fillEllipse(16, 22, 26, 8);
+    // Main boulder.
+    g.fillStyle(0x8a8a96, 1);
+    g.fillCircle(12, 16, 9);
+    g.fillCircle(20, 14, 8);
+    g.fillCircle(16, 12, 7);
+    g.lineStyle(1, 0x4a4a52, 1);
+    g.strokeCircle(12, 16, 9);
+    g.strokeCircle(20, 14, 8);
+    // Highlights.
+    g.fillStyle(0xb0b0bc, 1);
+    g.fillCircle(10, 13, 3);
+    g.fillCircle(18, 11, 2);
+    g.generateTexture('rock', W, H);
+    g.destroy();
+  }
+
+  private makeBush(): void {
+    const W = 28;
+    const H = 24;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // Foliage clumps.
+    g.fillStyle(0x2f6b1a, 1);
+    g.fillCircle(8, 14, 7);
+    g.fillCircle(20, 14, 7);
+    g.fillCircle(14, 11, 8);
+    g.lineStyle(1, 0x14380a, 1);
+    g.strokeCircle(8, 14, 7);
+    g.strokeCircle(20, 14, 7);
+    g.strokeCircle(14, 11, 8);
+    // Berries.
+    g.fillStyle(0xd02838, 1);
+    g.fillCircle(11, 12, 1.5);
+    g.fillCircle(17, 14, 1.5);
+    g.fillCircle(14, 9, 1.5);
+    g.fillCircle(8, 13, 1.5);
+    g.fillCircle(20, 12, 1.5);
+    g.generateTexture('bush', W, H);
+    g.destroy();
+  }
+
+  private makeBushBare(): void {
+    const W = 28;
+    const H = 24;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x4a6a3a, 1);
+    g.fillCircle(8, 16, 5);
+    g.fillCircle(20, 16, 5);
+    g.fillCircle(14, 13, 5);
+    g.lineStyle(1, 0x2a4a1a, 1);
+    g.strokeCircle(8, 16, 5);
+    g.strokeCircle(20, 16, 5);
+    g.strokeCircle(14, 13, 5);
+    g.generateTexture('bush-bare', W, H);
+    g.destroy();
+  }
+
+  private makeDeer(): void {
+    const W = 24;
+    const H = 28;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // Legs.
+    g.fillStyle(0x5a3a18, 1);
+    g.fillRect(6, 18, 2, 8);
+    g.fillRect(10, 18, 2, 8);
+    g.fillRect(14, 18, 2, 8);
+    g.fillRect(18, 18, 2, 8);
+    // Body.
+    g.fillStyle(0xa07040, 1);
+    g.fillRect(4, 12, 16, 8);
+    g.lineStyle(1, 0x5a3a18, 1);
+    g.strokeRect(4, 12, 16, 8);
+    // Head.
+    g.fillStyle(0xa07040, 1);
+    g.fillRect(16, 6, 6, 8);
+    g.strokeRect(16, 6, 6, 8);
+    // Antlers.
+    g.lineStyle(1, 0x4a2a08, 1);
+    g.lineBetween(18, 6, 16, 1);
+    g.lineBetween(20, 6, 22, 1);
+    g.lineBetween(16, 1, 14, 0);
+    g.lineBetween(22, 1, 23, 0);
+    // White spots.
+    g.fillStyle(0xf0e0c0, 1);
+    g.fillRect(8, 14, 1, 1);
+    g.fillRect(12, 15, 1, 1);
+    g.fillRect(15, 14, 1, 1);
+    g.generateTexture('deer', W, H);
     g.destroy();
   }
 
