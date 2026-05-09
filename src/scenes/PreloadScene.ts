@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { TILE_COLORS, TILE_SIZE } from '../data/tiles';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -6,11 +7,28 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // Phase 0: no assets yet. Asset manifest is populated in later phases (§8.3).
+    this.load.json('main_map', 'assets/tilemaps/main.json');
   }
 
   create(): void {
+    this.generateTerrainTexture();
     this.scene.start('Game');
     this.scene.launch('UI');
+  }
+
+  // Phase 1 placeholder: solid-color tiles packed horizontally into one
+  // tileset texture. Replace with real Tiny Swords art (§8.2) later.
+  private generateTerrainTexture(): void {
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    const totalWidth = TILE_COLORS.length * TILE_SIZE;
+    for (let i = 0; i < TILE_COLORS.length; i++) {
+      g.fillStyle(TILE_COLORS[i], 1);
+      g.fillRect(i * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE);
+      // Subtle border so adjacent tiles of the same colour are distinguishable.
+      g.lineStyle(1, 0x000000, 0.18);
+      g.strokeRect(i * TILE_SIZE + 0.5, 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+    }
+    g.generateTexture('terrain', totalWidth, TILE_SIZE);
+    g.destroy();
   }
 }
