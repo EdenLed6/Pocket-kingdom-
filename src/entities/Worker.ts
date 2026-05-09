@@ -3,6 +3,7 @@ import { TILE_SIZE } from '../data/tiles';
 import { BALANCE, type ResourceType } from '../data/balance';
 import { findPath, type TileXY } from '../utils/pathfinding';
 import type { ResourceNode } from './ResourceNode';
+import type { Building } from './Building';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -10,19 +11,17 @@ interface WorkerDeps {
   mapWidthTiles: number;
   mapHeightTiles: number;
   isWalkable: IsWalkable;
-  // Resolves the tile a fully-loaded worker should walk back to. For Phase 3
-  // this is still the tile just south of the Town Hall (only dropoff).
+  // Resolves the tile a fully-loaded worker should walk back to. Phase 3
+  // still routes everything to the Town Hall south-centre tile.
   getDropoffTile: () => TileXY;
-  // Called when the worker actually deposits cargo at the dropoff. Returns
-  // how much was accepted (resource cap may clip it).
+  // Returns the amount actually accepted (resource cap may clip it).
   deposit: (resource: ResourceType, amount: number) => number;
-  // Find another node of the same resource type to chain to once the
-  // current one is exhausted. May return null when nothing is available.
   findNearestNode: (
     fromX: number,
     fromY: number,
     resource: ResourceType,
   ) => ResourceNode | null;
+  findNearestSite: (fromX: number, fromY: number) => Building | null;
 }
 
 type State =
@@ -30,7 +29,9 @@ type State =
   | { kind: 'moving-to-node'; node: ResourceNode }
   | { kind: 'gathering'; node: ResourceNode; remainingSec: number }
   | { kind: 'moving-to-dropoff'; afterNode: ResourceNode | null }
-  | { kind: 'depositing' };
+  | { kind: 'depositing' }
+  | { kind: 'moving-to-site'; site: Building }
+  | { kind: 'building'; site: Building };
 
 const CARRY_TINT_BY_RESOURCE: Record<ResourceType, number> = {
   wood: 0xc8ffb0,
@@ -48,9 +49,10 @@ export class Worker {
   private inventoryResource: ResourceType | null = null;
   private path: { x: number; y: number }[] = [];
   private _selected = false;
-  // Once the player gives a worker any node, it keeps gathering nearby
-  // nodes of the same resource type after each drop-off. Cleared only
-  // when nothing is available.
+  // Latched player intent. After completing one task the worker chains to
+  // the nearest equivalent target (same resource for gather, any unfinished
+  // site for build) until none remains.
+  private autoMode: 'gather' | 'build' | null = null;
   private autoResource: ResourceType | null = null;
 
   constructor(id: number, scene: Phaser.Scene, tileX: number, tileY: number, deps: WorkerDeps) {
@@ -97,16 +99,15 @@ export class Worker {
     this.ring.setVisible(value);
   }
 
-  // Player command: gather from this node, then drop off, then auto-continue
-  // to nearby nodes of the same resource type until told otherwise.
   assignNode(node: ResourceNode): void {
+    this.releaseBuildingSlot();
+    this.autoMode = 'gather';
     this.autoResource = node.resource;
     if (!node.isAvailable) {
-      this.chainToNearest();
+      this.chainAfterAssignment();
       return;
     }
     if (this.inventoryAmount > 0 && this.inventoryResource !== node.resource) {
-      // Holding the wrong resource: drop off first, then try to chain.
       this.startMoveToDropoff(null);
       return;
     }
@@ -115,6 +116,29 @@ export class Worker {
       return;
     }
     this.startMoveToNode(node);
+  }
+
+  assignSite(site: Building): void {
+    this.releaseBuildingSlot();
+    this.autoMode = 'build';
+    this.autoResource = null;
+    if (site.isConstructed) {
+      this.chainAfterAssignment();
+      return;
+    }
+    if (this.inventoryAmount > 0) {
+      // Stash cargo first; the chain after deposit will pick this site (or
+      // the next nearest) automatically.
+      this.startMoveToDropoff(null);
+      return;
+    }
+    this.startMoveToSite(site);
+  }
+
+  private releaseBuildingSlot(): void {
+    if (this.state.kind === 'building') {
+      this.state.site.activeBuilders = Math.max(0, this.state.site.activeBuilders - 1);
+    }
   }
 
   private startMoveToNode(node: ResourceNode): void {
@@ -132,6 +156,13 @@ export class Worker {
     this.state = { kind: 'moving-to-dropoff', afterNode };
   }
 
+  private startMoveToSite(site: Building): void {
+    const path = this.computePath(site.interactionTile);
+    if (!path) return;
+    this.path = pathToWaypoints(path);
+    this.state = { kind: 'moving-to-site', site };
+  }
+
   private computePath(goal: TileXY): TileXY[] | null {
     const start: TileXY = { tx: this.tileX, ty: this.tileY };
     return findPath(
@@ -143,18 +174,29 @@ export class Worker {
     );
   }
 
-  private chainToNearest(): void {
-    if (!this.autoResource) {
+  private chainAfterAssignment(): void {
+    if (this.autoMode === 'gather' && this.autoResource) {
+      const next = this.deps.findNearestNode(this.sprite.x, this.sprite.y, this.autoResource);
+      if (next) {
+        this.startMoveToNode(next);
+        return;
+      }
+      this.autoMode = null;
+      this.autoResource = null;
       this.state = { kind: 'idle' };
       return;
     }
-    const next = this.deps.findNearestNode(this.sprite.x, this.sprite.y, this.autoResource);
-    if (next) {
-      this.startMoveToNode(next);
-    } else {
-      this.autoResource = null;
+    if (this.autoMode === 'build') {
+      const next = this.deps.findNearestSite(this.sprite.x, this.sprite.y);
+      if (next) {
+        this.startMoveToSite(next);
+        return;
+      }
+      this.autoMode = null;
       this.state = { kind: 'idle' };
+      return;
     }
+    this.state = { kind: 'idle' };
   }
 
   update(dtSec: number): void {
@@ -166,10 +208,12 @@ export class Worker {
 
     switch (this.state.kind) {
       case 'idle':
+      case 'depositing':
         return;
 
       case 'moving-to-node':
       case 'moving-to-dropoff':
+      case 'moving-to-site':
         this.advanceAlongPath(dtSec);
         return;
 
@@ -186,8 +230,21 @@ export class Worker {
         return;
       }
 
-      case 'depositing':
+      case 'building': {
+        const site = this.state.site;
+        if (site.isConstructed) {
+          // Someone else finished it (or buildContribute did via dt overflow).
+          site.activeBuilders = Math.max(0, site.activeBuilders - 1);
+          this.chainAfterAssignment();
+          return;
+        }
+        site.contributeBuild(dtSec);
+        if (site.isConstructed) {
+          site.activeBuilders = Math.max(0, site.activeBuilders - 1);
+          this.chainAfterAssignment();
+        }
         return;
+      }
     }
   }
 
@@ -219,7 +276,7 @@ export class Worker {
     if (this.state.kind === 'moving-to-node') {
       const node = this.state.node;
       if (!node.isAvailable) {
-        this.chainToNearest();
+        this.chainAfterAssignment();
         return;
       }
       this.state = {
@@ -243,8 +300,20 @@ export class Worker {
       if (afterNode && afterNode.isAvailable && this.inventoryAmount === 0) {
         this.startMoveToNode(afterNode);
       } else {
-        this.chainToNearest();
+        this.chainAfterAssignment();
       }
+      return;
+    }
+
+    if (this.state.kind === 'moving-to-site') {
+      const site = this.state.site;
+      if (site.isConstructed || site.activeBuilders >= 3) {
+        this.chainAfterAssignment();
+        return;
+      }
+      site.activeBuilders += 1;
+      this.state = { kind: 'building', site };
+      return;
     }
   }
 
@@ -255,8 +324,6 @@ export class Worker {
 }
 
 function pathToWaypoints(path: TileXY[]): { x: number; y: number }[] {
-  // Skip the first tile (current position) so we don't snap backwards on
-  // sub-pixel offsets.
   const waypoints: { x: number; y: number }[] = [];
   for (let i = 1; i < path.length; i++) {
     waypoints.push({
