@@ -46,13 +46,28 @@ export const BALANCE = {
     recomputeIntervalSec: 5,
   },
 
-  // Per §4.5: regrow / respawn cadence for resource nodes.
+  // Per §4.5: regrow / respawn cadence + AoM-style total yield per node.
+  // Each node takes many chops to deplete; workers loop chop -> deposit ->
+  // chop until the node runs out, then it stumps / vanishes (and regrows
+  // for trees / bushes / animals; rocks don't).
   nodes: {
     treeRegrowSec: 180,
     bushRegrowSec: 60,
     animalRespawnSec: 120,
     // Stone outcrops do NOT regrow; new ones spawn at edges (§4.5). Phase 3
     // initial set is static; edge respawn is deferred.
+    totalYield: {
+      tree: 50, // 10 chops × 5 wood — Eden's Phase 4 ask
+      rock: 300, // 30 chops × 10 stone — Eden's Phase 4 ask
+      bush: 16, // 4 picks × 4 food
+      animal: 24, // 4 hits × 6 food
+    },
+    yieldPerChop: {
+      tree: 5,
+      rock: 10,
+      bush: 4,
+      animal: 6,
+    },
   },
 
   // Town Hall placeholder position (tile coords for the top-left of the 3x3
