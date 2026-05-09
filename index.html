@@ -26,10 +26,51 @@
         display: block;
         image-rendering: pixelated;
       }
+      #diag {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 999;
+        background: rgba(0, 0, 0, 0.85);
+        color: #fff;
+        font: 12px/1.4 ui-monospace, monospace;
+        padding: 6px 8px;
+        max-height: 50vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #diag.empty { display: none; }
+      #diag .err { color: #ff8080; }
+      #diag .ok  { color: #80ff80; }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="diag" class="empty"></div>
+    <script>
+      // Visible diagnostic overlay so problems show up on a phone without devtools.
+      (function () {
+        var box = document.getElementById('diag');
+        function line(text, cls) {
+          box.classList.remove('empty');
+          var d = document.createElement('div');
+          if (cls) d.className = cls;
+          d.textContent = text;
+          box.appendChild(d);
+        }
+        window.__diag = line;
+        line('boot ' + new Date().toISOString(), 'ok');
+        line('ua ' + navigator.userAgent);
+        window.addEventListener('error', function (e) {
+          line('ERR ' + (e.message || e.error) + ' @ ' + (e.filename || '?') + ':' + (e.lineno || '?'), 'err');
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          line('REJ ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)), 'err');
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
