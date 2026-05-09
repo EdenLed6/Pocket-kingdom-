@@ -32,6 +32,12 @@ export class TouchController {
   // For desktop dev: mouse wheel zoom.
   private readonly wheelZoomStep = 0.1;
 
+  // Tap suppression: true once the current touch has gone past the drag
+  // threshold OR engaged pinch. Cleared when all pointers lift.
+  get wasGesture(): boolean {
+    return this.panExceededThreshold || this.isPinching;
+  }
+
   constructor(scene: Phaser.Scene, opts: TouchControllerOpts) {
     this.scene = scene;
     this.cam = scene.cameras.main;
