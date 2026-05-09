@@ -805,6 +805,7 @@ export class GameScene extends Phaser.Scene {
         this.deselectWorker();
         this.selectedWorker = w;
         w.setSelected(true);
+        this.scene.get('UI').events.emit('open-worker-panel', { worker: w });
       }
       return;
     }
@@ -863,7 +864,11 @@ export class GameScene extends Phaser.Scene {
   private openBuildingPanel(b: Building): void {
     this.deselectWorker();
     this.deselectSoldier();
+    if (this.selectedBarracks && this.selectedBarracks !== b) {
+      this.selectedBarracks.setSelected(false);
+    }
     this.selectedBarracks = b;
+    b.setSelected(true);
     this.scene.get('UI').events.emit('open-building-panel', {
       instanceId: b.instanceId,
       id: b.def.id,
@@ -875,6 +880,7 @@ export class GameScene extends Phaser.Scene {
 
   private closeBuildingPanel(): void {
     if (!this.selectedBarracks) return;
+    this.selectedBarracks.setSelected(false);
     this.selectedBarracks = null;
     this.scene.get('UI').events.emit('close-building-panel');
   }
@@ -883,6 +889,7 @@ export class GameScene extends Phaser.Scene {
     if (this.selectedWorker) {
       this.selectedWorker.setSelected(false);
       this.selectedWorker = null;
+      this.scene.get('UI').events.emit('close-worker-panel');
     }
   }
 

@@ -29,8 +29,15 @@ export class PreloadScene extends Phaser.Scene {
     // Warehouse: Red palette so it visually reads as a separate kind.
     this.load.image('b_warehouse', 'assets/sprites/ts/buildings/red/house2.png');
 
-    // ----- Units (idle spritesheets; frame 0 used until anims land) -----
+    // ----- Units -----
+    // Pawn (worker) — idle + run + 4 interact variants for state-driven anims.
     this.load.spritesheet('worker', 'assets/sprites/ts/units/blue/pawn_idle.png', HUMAN_FRAME);
+    this.load.spritesheet('worker_run', 'assets/sprites/ts/units/blue/pawn_run.png', HUMAN_FRAME);
+    this.load.spritesheet('worker_chop', 'assets/sprites/ts/units/blue/pawn_chop.png', HUMAN_FRAME);
+    this.load.spritesheet('worker_mine', 'assets/sprites/ts/units/blue/pawn_mine.png', HUMAN_FRAME);
+    this.load.spritesheet('worker_build', 'assets/sprites/ts/units/blue/pawn_build.png', HUMAN_FRAME);
+    this.load.spritesheet('worker_knife', 'assets/sprites/ts/units/blue/pawn_knife.png', HUMAN_FRAME);
+    // Soldier idles (anims for soldiers come later).
     this.load.spritesheet('u_spearman', 'assets/sprites/ts/units/blue/lancer_idle.png', LANCER_FRAME);
     this.load.spritesheet('u_archer', 'assets/sprites/ts/units/blue/archer_idle.png', HUMAN_FRAME);
     this.load.spritesheet('u_knight', 'assets/sprites/ts/units/blue/warrior_idle.png', HUMAN_FRAME);
@@ -52,8 +59,35 @@ export class PreloadScene extends Phaser.Scene {
   create(): void {
     this.generateTerrainTexture();
     this.generateProceduralUiTextures();
+    this.registerAnimations();
     this.scene.start('Game');
     this.scene.launch('UI');
+  }
+
+  // Phaser animations for worker states. Worker.ts plays them by name.
+  private registerAnimations(): void {
+    const anim = (key: string, sheet: string, frames: number, frameRate: number, repeat = -1) => {
+      if (this.anims.exists(key)) return;
+      this.anims.create({
+        key,
+        frames: this.anims.generateFrameNumbers(sheet, { start: 0, end: frames - 1 }),
+        frameRate,
+        repeat,
+      });
+    };
+    anim('worker_idle', 'worker', 8, 8);
+    anim('worker_run', 'worker_run', 6, 10);
+    anim('worker_chop', 'worker_chop', 6, 10);
+    anim('worker_mine', 'worker_mine', 6, 10);
+    anim('worker_build', 'worker_build', 3, 8);
+    anim('worker_knife', 'worker_knife', 4, 10);
+    // Soldier idles — gentle bob.
+    anim('spearman_idle', 'u_spearman', 12, 8);
+    anim('archer_idle', 'u_archer', 6, 8);
+    anim('knight_idle', 'u_knight', 8, 8);
+    anim('bandit_grunt_idle', 'u_bandit_grunt', 8, 8);
+    anim('bandit_archer_idle', 'u_bandit_archer', 6, 8);
+    anim('bandit_raider_idle', 'u_bandit_raider', 12, 8);
   }
 
   // Tilemap remains procedural for now (Tiny Swords' Tilemap_color1 has

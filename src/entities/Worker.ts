@@ -252,6 +252,10 @@ export class Worker {
     }
     this.sprite.setDepth(this.sprite.y);
     this.ring.setDepth(this.sprite.y - 1);
+    // Drive the worker's animation by FSM state. Phaser ignores a play()
+    // call for an already-playing anim, so this is cheap per-frame.
+    const animKey = this.selectAnimKey();
+    if (animKey) this.sprite.play(animKey, true);
 
     switch (this.state.kind) {
       case 'idle':
@@ -421,6 +425,29 @@ export class Worker {
         return 'Heading to farm';
       case 'tending':
         return 'Tending farm';
+    }
+  }
+
+  private selectAnimKey(): string | null {
+    switch (this.state.kind) {
+      case 'idle':
+      case 'depositing':
+        return 'worker_idle';
+      case 'moving-to-node':
+      case 'moving-to-dropoff':
+      case 'moving-to-site':
+      case 'moving-to-farm':
+        return 'worker_run';
+      case 'gathering': {
+        const r = this.state.node.resource;
+        if (r === 'wood') return 'worker_chop';
+        if (r === 'stone') return 'worker_mine';
+        return 'worker_knife';
+      }
+      case 'building':
+        return 'worker_build';
+      case 'tending':
+        return 'worker_knife';
     }
   }
 

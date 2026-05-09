@@ -25,6 +25,8 @@ export class Building {
   // divergence; logged in §12).
   activeTenders = 0;
   private sprite: Phaser.GameObjects.Sprite;
+  private highlight: Phaser.GameObjects.Rectangle | null = null;
+  private dustTimer: Phaser.Time.TimerEvent | null = null;
   private progressBar: Phaser.GameObjects.Graphics;
   private scene: Phaser.Scene;
 
@@ -49,9 +51,6 @@ export class Building {
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'building').setData('building', this);
 
-    // Tiny Swords building textures vary in source size; scale so the
-    // visible footprint matches the spec footprint (extra height spills
-    // upward thanks to origin 0.5,1).
     const tex = scene.textures.get(`b_${id}`).getSourceImage() as { width: number; height: number };
     const targetWidth = this.def.footprint.w * TILE_SIZE;
     const scale = targetWidth / Math.max(1, tex.width);
@@ -59,6 +58,46 @@ export class Building {
 
     this.progressBar = scene.add.graphics().setDepth(south + 1);
     this.drawProgressBar();
+
+    // Construction dust until the building completes.
+    this.dustTimer = scene.time.addEvent({
+      delay: 600,
+      loop: true,
+      callback: () => this.spawnDust(),
+    });
+  }
+
+  // Yellow translucent footprint highlight for "this building is selected".
+  setSelected(value: boolean): void {
+    if (value && !this.highlight) {
+      const w = this.def.footprint.w * TILE_SIZE;
+      const h = this.def.footprint.h * TILE_SIZE;
+      this.highlight = this.scene.add
+        .rectangle(this.tileX * TILE_SIZE, this.tileY * TILE_SIZE, w, h, 0xffff66, 0.18)
+        .setOrigin(0, 0)
+        .setStrokeStyle(3, 0xffff66, 0.9)
+        .setDepth(this.tileY * TILE_SIZE);
+    } else if (!value && this.highlight) {
+      this.highlight.destroy();
+      this.highlight = null;
+    }
+  }
+
+  private spawnDust(): void {
+    if (this.isConstructed) return;
+    const fp = this.def.footprint;
+    const x = this.tileX * TILE_SIZE + Math.random() * fp.w * TILE_SIZE;
+    const y = (this.tileY + fp.h - 1) * TILE_SIZE + Math.random() * TILE_SIZE;
+    const dust = this.scene.add
+      .circle(x, y, 4, 0xeed4b4, 0.75)
+      .setDepth(y + 2);
+    this.scene.tweens.add({
+      targets: dust,
+      y: y - 26,
+      alpha: 0,
+      duration: 850,
+      onComplete: () => dust.destroy(),
+    });
   }
 
   // Tile players walk to in order to interact with this building. South-
@@ -109,6 +148,10 @@ export class Building {
     this.hp = this.def.hpMax;
     this.sprite.setAlpha(1);
     this.progressBar.destroy();
+    if (this.dustTimer) {
+      this.dustTimer.remove();
+      this.dustTimer = null;
+    }
     this.scene.events.emit('building-constructed', this);
   }
 
@@ -129,5 +172,7 @@ export class Building {
   destroy(): void {
     this.sprite.destroy();
     this.progressBar.destroy();
+    if (this.highlight) this.highlight.destroy();
+    if (this.dustTimer) this.dustTimer.remove();
   }
 }

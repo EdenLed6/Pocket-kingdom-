@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BUILDING_DEFS, BUILDING_ORDER, type BuildingId } from '../data/buildings';
 import { UNIT_DEFS, PLAYER_UNIT_ORDER } from '../data/units';
+import type { Worker } from '../entities/Worker';
 
 const HUD_FONT = {
   fontFamily: 'ui-monospace, monospace',
@@ -99,12 +100,92 @@ export class UIScene extends Phaser.Scene {
 
     this.events.on('open-building-panel', this.openBuildingPanel, this);
     this.events.on('close-building-panel', this.closeBuildingPanel, this);
+    this.events.on('open-worker-panel', this.openWorkerPanel, this);
+    this.events.on('close-worker-panel', this.closeWorkerPanel, this);
     this.events.on('show-placement-banner', this.showPlacementBanner, this);
     this.events.on('hide-placement-banner', this.hidePlacementBanner, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onRegistryChange, this);
     });
+  }
+
+  // ---------- worker selection panel ---------------------------------------
+
+  private workerPanel: Phaser.GameObjects.Container | null = null;
+  private workerPanelWorker: Worker | null = null;
+  private workerPanelStateText: Phaser.GameObjects.Text | null = null;
+  private workerPanelTimer: Phaser.Time.TimerEvent | null = null;
+
+  private openWorkerPanel(payload: { worker: Worker }): void {
+    this.closeWorkerPanel();
+    this.workerPanelWorker = payload.worker;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const panelH = 92;
+    const c = this.add.container(0, h - panelH).setDepth(1200).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, panelH, 0x000000, 0.85).setOrigin(0, 0));
+    c.add(this.add.text(12, 8, `Worker #${payload.worker.id + 1}`, HUD_FONT));
+    this.workerPanelStateText = this.add.text(
+      12,
+      32,
+      payload.worker.getStatusText(),
+      { ...HUD_FONT, fontSize: '14px', color: '#cce0ff' },
+    );
+    c.add(this.workerPanelStateText);
+
+    // Send-home button.
+    const btnW = 130;
+    const btnH = 36;
+    const btnX = w - btnW - 12;
+    const btnY = panelH / 2 - btnH / 2;
+    const btn = this.add
+      .rectangle(btnX, btnY, btnW, btnH, 0x3a4a6a, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0x80c0ff)
+      .setInteractive({ useHandCursor: true });
+    const btnLabel = this.add
+      .text(btnX + btnW / 2, btnY + btnH / 2, 'Send home', { ...HUD_FONT, fontSize: '14px' })
+      .setOrigin(0.5);
+    btn.on(Phaser.Input.Events.POINTER_UP, () => {
+      const w2 = this.workerPanelWorker;
+      if (w2) w2.sendHome();
+    });
+    c.add(btn);
+    c.add(btnLabel);
+
+    // Close ×.
+    const close = this.add
+      .text(w - 12, 4, '×', { ...HUD_FONT, fontSize: '24px' })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    close.on(Phaser.Input.Events.POINTER_UP, () => this.closeWorkerPanel());
+    c.add(close);
+
+    // Refresh status text twice a second so the player sees state changes.
+    this.workerPanelTimer = this.time.addEvent({
+      delay: 500,
+      loop: true,
+      callback: () => {
+        if (this.workerPanelStateText && this.workerPanelWorker) {
+          this.workerPanelStateText.setText(this.workerPanelWorker.getStatusText());
+        }
+      },
+    });
+
+    this.workerPanel = c;
+  }
+
+  private closeWorkerPanel(): void {
+    if (!this.workerPanel) return;
+    this.workerPanel.destroy();
+    this.workerPanel = null;
+    this.workerPanelWorker = null;
+    this.workerPanelStateText = null;
+    if (this.workerPanelTimer) {
+      this.workerPanelTimer.remove();
+      this.workerPanelTimer = null;
+    }
   }
 
   // ---------- placement banner ---------------------------------------------

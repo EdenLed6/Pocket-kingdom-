@@ -128,6 +128,10 @@ export class Unit {
 
     this.sprite.setDepth(this.sprite.y);
     if (this.ring) this.ring.setPosition(this.sprite.x, this.sprite.y + 4).setDepth(this.sprite.y - 1);
+    // Phase 4: each unit has at minimum an idle bob animation. Run / attack
+    // anims wait until we extract those spritesheets too.
+    const idleAnim = `${this.def.id}_idle`;
+    if (this.scene.anims.exists(idleAnim)) this.sprite.play(idleAnim, true);
 
     switch (this.state.kind) {
       case 'idle':
