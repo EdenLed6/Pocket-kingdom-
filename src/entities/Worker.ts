@@ -11,11 +11,14 @@ interface WorkerDeps {
   mapWidthTiles: number;
   mapHeightTiles: number;
   isWalkable: IsWalkable;
-  // Resolves the tile a fully-loaded worker should walk back to. Phase 3
-  // still routes everything to the Town Hall south-centre tile.
-  getDropoffTile: () => TileXY;
-  // Returns the amount actually accepted (resource cap may clip it).
-  deposit: (resource: ResourceType, amount: number) => number;
+  // Resolves the tile a fully-loaded worker should walk back to. AoM-style:
+  // the nearest building that accepts the resource (Town Hall always; plus
+  // Lumber Mill for wood, Quarry for stone, Farm / Hunter's Lodge for food).
+  getDropoffTile: (resource: ResourceType, fromX: number, fromY: number) => TileXY;
+  // Returns the amount actually accepted (resource cap may clip it). The
+  // dropoff position lets GameScene apply Lumber Mill / Quarry / Lodge
+  // bonuses when the worker is depositing AT one of those buildings.
+  deposit: (resource: ResourceType, amount: number, atTile: TileXY) => number;
   findNearestNode: (
     fromX: number,
     fromY: number,
@@ -148,8 +151,12 @@ export class Worker {
     this.state = { kind: 'moving-to-node', node };
   }
 
+  private currentDropoff: TileXY | null = null;
+
   private startMoveToDropoff(afterNode: ResourceNode | null): void {
-    const dropoff = this.deps.getDropoffTile();
+    const resource = this.inventoryResource ?? 'wood';
+    const dropoff = this.deps.getDropoffTile(resource, this.sprite.x, this.sprite.y);
+    this.currentDropoff = dropoff;
     const path = this.computePath(dropoff);
     if (!path) return;
     this.path = pathToWaypoints(path);
@@ -290,11 +297,16 @@ export class Worker {
     if (this.state.kind === 'moving-to-dropoff') {
       const afterNode = this.state.afterNode;
       this.state = { kind: 'depositing' };
-      if (this.inventoryResource && this.inventoryAmount > 0) {
-        const accepted = this.deps.deposit(this.inventoryResource, this.inventoryAmount);
+      if (this.inventoryResource && this.inventoryAmount > 0 && this.currentDropoff) {
+        const accepted = this.deps.deposit(
+          this.inventoryResource,
+          this.inventoryAmount,
+          this.currentDropoff,
+        );
         this.inventoryAmount = Math.max(0, this.inventoryAmount - accepted);
         if (this.inventoryAmount === 0) this.inventoryResource = null;
       }
+      this.currentDropoff = null;
       this.sprite.clearTint();
 
       if (afterNode && afterNode.isAvailable && this.inventoryAmount === 0) {

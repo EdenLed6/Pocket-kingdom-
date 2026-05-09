@@ -299,9 +299,50 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  private getDropoffTile(): TileXY {
+  // Phase 4: AoM-style drop-off — the nearest building that accepts the
+  // worker's resource. Town Hall always accepts everything; Lumber Mill /
+  // Quarry / Farm / Hunter's Lodge accept their specific kind. Worker calls
+  // this when full.
+  private getDropoffTile(resource: ResourceType, fromX: number, fromY: number): TileXY {
+    const candidates = this.dropoffCandidates(resource);
+    let best = candidates[0];
+    let bestDistSq = Infinity;
+    for (const c of candidates) {
+      const dx = c.cx - fromX;
+      const dy = c.cy - fromY;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestDistSq) {
+        best = c;
+        bestDistSq = d2;
+      }
+    }
+    return best.tile;
+  }
+
+  private dropoffCandidates(
+    resource: ResourceType,
+  ): { tile: TileXY; cx: number; cy: number }[] {
+    const out: { tile: TileXY; cx: number; cy: number }[] = [];
+    // Town Hall is always available (whether modelled as a Building yet or
+    // not — we read its placement from BALANCE.townHall directly).
     const th = BALANCE.townHall;
-    return { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles };
+    out.push({
+      tile: { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles },
+      cx: (th.tileX + th.sizeTiles / 2) * TILE_SIZE,
+      cy: (th.tileY + th.sizeTiles) * TILE_SIZE,
+    });
+    const accepts: Record<ResourceType, BuildingId[]> = {
+      wood: ['lumber_mill'],
+      stone: ['quarry'],
+      food: ['farm', 'hunters_lodge'],
+    };
+    for (const b of this.buildings) {
+      if (!b.isConstructed) continue;
+      if (!accepts[resource].includes(b.def.id)) continue;
+      const it = b.interactionTile;
+      out.push({ tile: it, cx: b.worldX, cy: b.worldY });
+    }
+    return out;
   }
 
   private findNearestNode(fromX: number, fromY: number, resource: ResourceType): ResourceNode | null {
@@ -338,14 +379,36 @@ export class GameScene extends Phaser.Scene {
     return best;
   }
 
-  private deposit(resource: ResourceType, amount: number): number {
+  private deposit(resource: ResourceType, amount: number, atTile: TileXY): number {
+    // Apply §4.4 building bonuses based on which dropoff the worker reached.
+    // Lumber Mill / Quarry: +50% on wood / stone respectively. Hunter's
+    // Lodge: +30% but ONLY on food coming in via animal kills (we proxy this
+    // by treating food deposited AT the lodge as animal food). Farm has no
+    // deposit bonus — its bonus is the passive +1/5s already wired.
+    const dropoffBuilding = this.buildings.find((b) =>
+      b.isConstructed &&
+      atTile.tx >= b.tileX &&
+      atTile.tx < b.tileX + b.def.footprint.w + 1 &&
+      atTile.ty >= b.tileY &&
+      atTile.ty < b.tileY + b.def.footprint.h + 1,
+    );
+    let multiplier = 1;
+    if (dropoffBuilding) {
+      const id = dropoffBuilding.def.id;
+      if (resource === 'wood' && id === 'lumber_mill') multiplier = 1.5;
+      else if (resource === 'stone' && id === 'quarry') multiplier = 1.5;
+      else if (resource === 'food' && id === 'hunters_lodge') multiplier = 1.3;
+    }
+    const boosted = Math.floor(amount * multiplier);
+
     const capKey = REGISTRY_CAP_KEY[resource];
     const valKey = REGISTRY_KEY[resource];
     const cap = (this.registry.get(capKey) as number) ?? 0;
     const cur = (this.registry.get(valKey) as number) ?? 0;
-    const accepted = Math.min(amount, Math.max(0, cap - cur));
+    const accepted = Math.min(boosted, Math.max(0, cap - cur));
     this.registry.set(valKey, cur + accepted);
-    return accepted;
+    // Worker's inventory only had `amount` raw; tell it that's all gone.
+    return amount;
   }
 
   // ---------- placement -------------------------------------------------------
@@ -479,11 +542,13 @@ export class GameScene extends Phaser.Scene {
         break;
       }
       case 'farm': {
-        // §4.4: 1 food / 5s passive. No worker needed.
+        // §4.4: 1 food / 5s passive. No worker needed; goes straight into
+        // the global stockpile (no deposit-bonus building applies).
+        const farmTile = b.interactionTile;
         this.time.addEvent({
           delay: 5000,
           loop: true,
-          callback: () => this.deposit('food', 1),
+          callback: () => this.deposit('food', 1, farmTile),
         });
         break;
       }
