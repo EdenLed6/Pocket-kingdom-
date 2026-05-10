@@ -1234,6 +1234,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    if (this.isOverUI(pointer)) return;
     if (this.paintMode !== 'off') {
       if (this.painting) this.paintTileAtPointer(pointer);
       return;
@@ -1378,7 +1379,19 @@ export class GameScene extends Phaser.Scene {
     this.scene.get('UI').events.emit('paint-mode-changed', this.paintMode);
   }
 
+  // True when the pointer is over an interactive object in the UIScene
+  // (HUD buttons, placement banner, panels, etc). Used to prevent
+  // scene-level pointer handlers from also acting on the world tile
+  // beneath the UI — otherwise tapping the ✓ Place button would also
+  // reposition the ghost to the top-of-screen banner location.
+  private isOverUI(pointer: Phaser.Input.Pointer): boolean {
+    const ui = this.scene.get('UI') as Phaser.Scene | undefined;
+    if (!ui || !ui.input) return false;
+    return ui.input.hitTestPointer(pointer).length > 0;
+  }
+
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    if (this.isOverUI(pointer)) return;
     if (this.paintMode !== 'off') {
       if (this.touch.wasGesture) return;
       this.painting = true;
@@ -1433,6 +1446,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]): void {
+    if (this.isOverUI(pointer)) return;
     if (this.paintMode !== 'off') {
       this.painting = false;
       return;
