@@ -179,6 +179,7 @@ export class GameScene extends Phaser.Scene {
     const ui = this.scene.get('UI');
     ui.events.on('build-card-selected', this.onBuildCardSelected, this);
     ui.events.on('build-cancel', this.cancelPlacement, this);
+    ui.events.on('build-confirm', this.confirmPlacement, this);
     ui.events.on('train-unit', this.onTrainUnitRequest, this);
     ui.events.on('train-worker', this.onTrainWorkerRequest, this);
     ui.events.on('tech-unlock-request', this.onTechUnlockRequest, this);
@@ -1201,6 +1202,22 @@ export class GameScene extends Phaser.Scene {
     this.scene.get('UI').events.emit('hide-placement-banner');
   }
 
+  // Eden's UX: a tap on the map only REPOSITIONS the ghost; the actual
+  // commit happens on the ✓ Place button in the placement banner. This
+  // gives time to drag/refine the position before paying resources.
+  private confirmPlacement(): void {
+    if (!this.placement) return;
+    const { id, outline } = this.placement;
+    // The outline rectangle is anchored at (tx * TILE_SIZE, ty * TILE_SIZE)
+    // by updatePlacementPreview, so recovering the tile is a clean divide.
+    const tx = Math.round(outline.x / TILE_SIZE);
+    const ty = Math.round(outline.y / TILE_SIZE);
+    if (this.isPlacementValid(id, tx, ty) && this.canAfford(id)) {
+      this.placeBuilding(id, tx, ty);
+      this.cancelPlacement();
+    }
+  }
+
   private updatePlacementPreview(worldX: number, worldY: number): void {
     if (!this.placement) return;
     const def = BUILDING_DEFS[this.placement.id];
@@ -1424,14 +1441,11 @@ export class GameScene extends Phaser.Scene {
     if (pointer.getDistance() > 10) return;
 
     if (this.placement) {
+      // Tap = reposition the ghost only. Commit happens via the ✓ Place
+      // button on the placement banner so Eden has time to drag/refine
+      // the position before paying resources.
       const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-      const def = BUILDING_DEFS[this.placement.id];
-      const tx = Math.floor(world.x / TILE_SIZE) - Math.floor(def.footprint.w / 2);
-      const ty = Math.floor(world.y / TILE_SIZE) - Math.floor(def.footprint.h / 2);
-      if (this.isPlacementValid(this.placement.id, tx, ty) && this.canAfford(this.placement.id)) {
-        this.placeBuilding(this.placement.id, tx, ty);
-        this.cancelPlacement();
-      }
+      this.updatePlacementPreview(world.x, world.y);
       return;
     }
 
@@ -1497,7 +1511,19 @@ export class GameScene extends Phaser.Scene {
 
     if (kind === 'node') {
       const node = obj.getData('node') as ResourceNode;
-      if (this.selectedWorker) this.selectedWorker.assignNode(node);
+      if (this.selectedWorker) {
+        this.selectedWorker.assignNode(node);
+        return;
+      }
+      // No worker selected: open a small info panel showing the node's
+      // resource type and remaining yield (Eden: "tapping a tree should
+      // show 100/100 wood").
+      this.scene.get('UI').events.emit('open-node-panel', {
+        kind: node.kind,
+        resource: node.resource,
+        remaining: node.remainingYield,
+        max: node.maxYield,
+      });
       return;
     }
 
@@ -1567,5 +1593,6 @@ export class GameScene extends Phaser.Scene {
     this.deselectWorker();
     this.deselectSoldier();
     this.closeBuildingPanel();
+    this.scene.get('UI').events.emit('close-node-panel');
   }
 }

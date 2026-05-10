@@ -84,6 +84,7 @@ export class UIScene extends Phaser.Scene {
     this.buildingPanel = null;
     this.panelBarracksId = -1;
     this.researchPanel = null;
+    this.nodePanel = null;
 
     const w = this.scale.width;
     this.add.rectangle(0, 0, w, 36, 0x000000, 0.55).setOrigin(0, 0).setDepth(1000);
@@ -177,6 +178,8 @@ export class UIScene extends Phaser.Scene {
     this.events.on('close-building-panel', this.closeBuildingPanel, this);
     this.events.on('open-worker-panel', this.openWorkerPanel, this);
     this.events.on('close-worker-panel', this.closeWorkerPanel, this);
+    this.events.on('open-node-panel', this.openNodePanel, this);
+    this.events.on('close-node-panel', this.closeNodePanel, this);
     this.events.on('show-placement-banner', this.showPlacementBanner, this);
     this.events.on('hide-placement-banner', this.hidePlacementBanner, this);
     this.events.on('saved-toast', this.showSavedToast, this);
@@ -195,6 +198,7 @@ export class UIScene extends Phaser.Scene {
 
   private openWorkerPanel(payload: { worker: Worker }): void {
     this.closeWorkerPanel();
+    this.closeNodePanel();
     this.workerPanelWorker = payload.worker;
     const w = this.scale.width;
     const h = this.scale.height;
@@ -709,18 +713,51 @@ export class UIScene extends Phaser.Scene {
     this.hidePlacementBanner();
     const w = this.scale.width;
     const c = this.add.container(0, 40).setDepth(1300).setScrollFactor(0);
-    c.add(this.add.rectangle(0, 0, w, 32, 0x222230, 0.92).setOrigin(0, 0));
+    c.add(this.add.rectangle(0, 0, w, 36, 0x222230, 0.92).setOrigin(0, 0));
     c.add(
       this.add
-        .text(12, 7, `Placing: ${name} — tap to place`, { ...HUD_FONT, fontSize: '15px' })
+        .text(12, 9, `Placing: ${name} — drag to position`, {
+          ...HUD_FONT,
+          fontSize: '14px',
+        })
         .setOrigin(0, 0),
     );
-    const cancel = this.add
-      .text(w - 12, 4, '×', { ...HUD_FONT, fontSize: '24px' })
-      .setOrigin(1, 0)
+    // ✓ confirm button — emits 'build-confirm', GameScene validates and
+    // commits. Sized big enough to thumb-tap on phone without
+    // accidentally hitting the cancel button next to it.
+    const confirmW = 50;
+    const cancelW = 36;
+    const confirmX = w - confirmW - cancelW - 8;
+    const confirm = this.add
+      .rectangle(confirmX, 4, confirmW, 28, 0x3a6a3a, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0x80ff80)
       .setInteractive({ useHandCursor: true });
-    cancel.on(Phaser.Input.Events.POINTER_UP, () => this.events.emit('build-cancel'));
+    const confirmLabel = this.add
+      .text(confirmX + confirmW / 2, 18, '✓ Place', { ...HUD_FONT, fontSize: '13px' })
+      .setOrigin(0.5);
+    confirm.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
+      this.events.emit('build-confirm');
+    });
+    c.add(confirm);
+    c.add(confirmLabel);
+
+    const cancelX = w - cancelW - 4;
+    const cancel = this.add
+      .rectangle(cancelX, 4, cancelW, 28, 0x442222, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0xff8080)
+      .setInteractive({ useHandCursor: true });
+    const cancelLabel = this.add
+      .text(cancelX + cancelW / 2, 18, '×', { ...HUD_FONT, fontSize: '20px' })
+      .setOrigin(0.5);
+    cancel.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
+      this.events.emit('build-cancel');
+    });
     c.add(cancel);
+    c.add(cancelLabel);
     this.placementBanner = c;
   }
 
@@ -728,6 +765,94 @@ export class UIScene extends Phaser.Scene {
     if (!this.placementBanner) return;
     this.placementBanner.destroy();
     this.placementBanner = null;
+  }
+
+  // ---------- node info panel (Eden: "tapping a tree should show 100/100") -
+
+  private nodePanel: Phaser.GameObjects.Container | null = null;
+  private openNodePanel(payload: {
+    kind: string;
+    resource: string;
+    remaining: number;
+    max: number;
+  }): void {
+    this.closeNodePanel();
+    // Don't compete with the worker / building selection panels — they
+    // sit at the same screen anchor.
+    if (this.workerPanel || this.buildingPanel) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const panelH = 96;
+    // Bottom-anchored just above the build/road buttons (which sit ~48px
+    // tall at the very bottom).
+    const c = this.add
+      .container(0, h - panelH - 64)
+      .setDepth(1200)
+      .setScrollFactor(0);
+    c.add(
+      this.add
+        .rectangle(0, 0, w, panelH, 0x222230, 0.95)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, 0x80c080),
+    );
+    const titleByKind: Record<string, string> = {
+      tree: 'Tree',
+      rock: 'Rock',
+      bush: 'Berry Bush',
+      animal: 'Sheep',
+    };
+    const title = titleByKind[payload.kind] ?? payload.kind;
+    c.add(
+      this.add.text(12, 8, `${title}`, { ...HUD_FONT, fontSize: '16px' }),
+    );
+    c.add(
+      this.add.text(12, 32, `${payload.resource.toUpperCase()}`, {
+        ...CARD_FONT,
+        color: '#cfcfcf',
+      }),
+    );
+    // Yield bar — visual + text. Color matches the resource.
+    const barX = 12;
+    const barY = 60;
+    const barW = w - 24 - 36; // leave room for the × button
+    const barH = 14;
+    const colorByResource: Record<string, number> = {
+      wood: 0x6b4226,
+      stone: 0x9a9a9a,
+      food: 0xff8060,
+    };
+    const fillColor = colorByResource[payload.resource] ?? 0x80c080;
+    c.add(
+      this.add.rectangle(barX, barY, barW, barH, 0x000000, 0.4).setOrigin(0, 0),
+    );
+    const ratio = payload.max > 0 ? Math.max(0, payload.remaining / payload.max) : 0;
+    c.add(
+      this.add.rectangle(barX, barY, Math.floor(barW * ratio), barH, fillColor, 1).setOrigin(0, 0),
+    );
+    c.add(
+      this.add
+        .text(barX + barW / 2, barY + barH / 2, `${payload.remaining} / ${payload.max}`, {
+          ...HUD_FONT,
+          fontSize: '12px',
+        })
+        .setOrigin(0.5),
+    );
+    const close = this.add
+      .text(w - 12, 4, '×', { ...HUD_FONT, fontSize: '24px' })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    close.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
+      this.closeNodePanel();
+    });
+    c.add(close);
+    this.nodePanel = c;
+  }
+
+  private closeNodePanel(): void {
+    if (!this.nodePanel) return;
+    this.nodePanel.destroy();
+    this.nodePanel = null;
   }
 
   private refreshClock(): void {
@@ -799,6 +924,7 @@ export class UIScene extends Phaser.Scene {
     hpMax: number;
   }): void {
     this.closeBuildingPanel();
+    this.closeNodePanel();
     this.panelBarracksId = payload.instanceId;
     const w = this.scale.width;
     const h = this.scale.height;

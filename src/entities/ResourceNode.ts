@@ -156,6 +156,14 @@ export class ResourceNode {
     return this.remaining > 0;
   }
 
+  // Public read-only views for the selection panel.
+  get remainingYield(): number {
+    return this.remaining;
+  }
+  get maxYield(): number {
+    return this.cfg.totalYield;
+  }
+
   harvest(): number {
     if (this.remaining <= 0) return 0;
     const got = Math.min(this.cfg.yieldPerChop, this.remaining);

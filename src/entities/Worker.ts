@@ -119,11 +119,19 @@ export class Worker {
     this.ring.setVisible(value);
   }
 
+  // The specific node this worker was last assigned to. Persists across
+  // multiple carry-trips so the worker keeps returning to the same tree /
+  // rock until it's depleted, instead of jumping to "nearest equivalent"
+  // (which Eden flagged as confusing).
+  private targetNode: ResourceNode | null = null;
+
   assignNode(node: ResourceNode): void {
     this.releaseBuildingSlot();
+    this.targetNode = node;
     this.autoMode = 'gather';
     this.autoResource = node.resource;
     if (!node.isAvailable) {
+      this.targetNode = null;
       this.chainAfterAssignment();
       return;
     }
@@ -142,6 +150,7 @@ export class Worker {
 
   assignSite(site: Building): void {
     this.releaseBuildingSlot();
+    this.targetNode = null;
     this.autoMode = 'build';
     this.autoResource = null;
     if (site.isConstructed) {
@@ -166,6 +175,7 @@ export class Worker {
   // tending them. Worker walks to the farm and stays there until reassigned.
   assignFarm(farm: Building): void {
     this.releaseBuildingSlot();
+    this.targetNode = null;
     this.autoMode = null;
     this.autoResource = null;
     if (this.inventoryAmount > 0) {
@@ -260,11 +270,14 @@ export class Worker {
 
   private chainAfterAssignment(): void {
     if (this.autoMode === 'gather' && this.autoResource) {
-      const next = this.deps.findNearestNode(this.sprite.x, this.sprite.y, this.autoResource);
-      if (next) {
-        this.startMoveToNode(next);
+      // Prefer the worker's locked-in target node (Eden: "go to the
+      // specific tree I clicked, not anywhere"). Only when that node is
+      // depleted do we go idle — no auto-jump to a different node.
+      if (this.targetNode && this.targetNode.isAvailable) {
+        this.startMoveToNode(this.targetNode);
         return;
       }
+      this.targetNode = null;
       this.autoMode = null;
       this.autoResource = null;
       this.state = { kind: 'idle' };
