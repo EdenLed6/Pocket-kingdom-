@@ -3,6 +3,7 @@ import { BUILDING_DEFS, BUILDING_ORDER, type BuildingId } from '../data/building
 import { UNIT_DEFS, PLAYER_UNIT_ORDER } from '../data/units';
 import type { Worker } from '../entities/Worker';
 import { AudioSystem } from '../systems/AudioSystem';
+import { SaveSystem } from '../systems/SaveSystem';
 import { TechSystem } from '../systems/TechSystem';
 import { TECH_DEFS, TECH_ORDER, type TechId } from '../data/tech';
 import type { ResourceType } from '../data/balance';
@@ -550,17 +551,14 @@ export class UIScene extends Phaser.Scene {
   }
 
   private restartGame(): void {
-    // Tear down the overlay first, then bounce both scenes. GameScene
-    // was paused by the game-over emit; UIScene needs to clear its own
-    // state so a fresh game starts clean.
-    if (this.gameOverPanel) {
-      this.gameOverPanel.destroy();
-      this.gameOverPanel = null;
-    }
-    const game = this.scene.get('Game');
-    if (game.scene.isPaused()) game.scene.resume();
-    game.scene.restart();
-    this.scene.restart();
+    // Sledgehammer restart: clear the save and reload the page. Earlier
+    // we tried scene.restart() on both scenes, but Phaser's restart reuses
+    // the scene class instance — TS field initializers don't re-run, and
+    // GameScene's auto-load would just rehydrate the previous run anyway.
+    // A page reload guarantees a clean boot on web *and* in the
+    // Capacitor WebView.
+    SaveSystem.clear();
+    window.location.reload();
   }
 
   // ---------- raid warning (10s pre-spawn banner + arrow) ----------------
