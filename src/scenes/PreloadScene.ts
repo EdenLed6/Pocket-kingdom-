@@ -51,7 +51,12 @@ export class PreloadScene extends Phaser.Scene {
       this.load.spritesheet(`tree_v${n}`, `assets/sprites/ts/resources/tree${n}.png`, TREE_FRAME);
       this.load.image(`stump_v${n}`, `assets/sprites/ts/resources/stump${n}.png`);
     }
-    this.load.image('rock', 'assets/sprites/ts/resources/rock1.png');
+    // Rock variants for visual variety in stone clusters.
+    this.load.image('rock_v1', 'assets/sprites/ts/resources/rock1.png');
+    this.load.image('rock_v2', 'assets/sprites/ts/resources/rock2.png');
+    this.load.image('rock_v3', 'assets/sprites/ts/resources/rock3.png');
+    this.load.image('rock_v4', 'assets/sprites/ts/resources/gold_stone1.png');
+    this.load.image('rock_v5', 'assets/sprites/ts/resources/gold_stone4.png');
     this.load.spritesheet('bush', 'assets/sprites/ts/resources/bush.png', SQUARE_128);
     this.load.spritesheet('deer', 'assets/sprites/ts/resources/sheep_idle.png', SQUARE_128);
     // Shore decorations to soften the staircase look at lake edges.

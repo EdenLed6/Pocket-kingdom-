@@ -31,10 +31,11 @@ const CONFIGS: Record<NodeKind, NodeConfig> = {
   },
   rock: {
     kind: 'rock',
-    textureKey: 'rock',
+    textureKey: 'rock_v1', // overridden per-instance with a 1..5 variant
     stumpTextureKey: null,
     origin: [0.5, 0.7],
-    // rock1 is already 64×64 — full size matches the tile.
+    // Source rocks are mixed 64x64 / 128x128 — base scale tuned per
+    // variant in the constructor.
     scale: 1.0,
     regrowSec: 0,
     yieldPerChop: BALANCE.nodes.yieldPerChop.rock,
@@ -100,22 +101,38 @@ export class ResourceNode {
 
     // Trees: roll a 1..4 variant for AoM-style forest variety.
     this.treeVariant = kind === 'tree' ? Phaser.Math.Between(1, 4) : 1;
-    const initialKey = kind === 'tree' ? `tree_v${this.treeVariant}` : this.cfg.textureKey;
+    // Rocks: roll a 1..5 variant (3 boulders + 2 small stones) so a
+    // quarry cluster has mixed sizes / silhouettes.
+    const rockVariant = kind === 'rock' ? Phaser.Math.Between(1, 5) : 1;
+    const initialKey =
+      kind === 'tree'
+        ? `tree_v${this.treeVariant}`
+        : kind === 'rock'
+          ? `rock_v${rockVariant}`
+          : this.cfg.textureKey;
 
     // No internal jitter: the spawner already passes a sub-tile pixel
     // position. visX/visY just mirror world coords for the sprite.
     this.visX = worldX;
     this.visY = worldY;
 
-    // Slight per-instance scale variance for trees so the canopy heights
-    // don't all match. Hash uses the pixel position so neighbours differ.
+    // Per-instance scale variance + per-variant base scale.
     const h3 = ((Math.floor(worldX) * 50331653) ^ (Math.floor(worldY) * 12582917)) >>> 0;
-    const scaleVariance = kind === 'tree' ? ((h3 % 1000) / 1000) * 0.2 - 0.07 : 0;
+    const variance = ((h3 % 1000) / 1000) * 0.2 - 0.07;
+    let baseScale = this.cfg.scale;
+    if (kind === 'tree') {
+      baseScale = this.cfg.scale + variance;
+    } else if (kind === 'rock') {
+      // rock_v1..3 are 64×64 (display ~tile-sized at 1.0); gold_stone v4/v5
+      // are 128×128 so they need 0.5 to match. Add ±0.15 size variance.
+      const tile64 = rockVariant <= 3;
+      baseScale = (tile64 ? 0.95 : 0.5) + variance * 0.6;
+    }
 
     this.sprite = scene.add
       .sprite(this.visX, this.visY, initialKey)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
-      .setScale(this.cfg.scale + scaleVariance)
+      .setScale(baseScale)
       .setDepth(this.visY)
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'node').setData('node', this);
