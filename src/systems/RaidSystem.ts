@@ -97,11 +97,25 @@ export class RaidSystem {
         `edge=${edge.side}@(${edge.tx},${edge.ty})`,
     );
 
-    composition.forEach((entry, i) => {
-      const dx = (i % 5) - 2;
-      const dy = Math.floor(i / 5);
-      const t = this.offsetEdge(edge, dx, dy);
-      this.deps.spawnBandit(entry.id, t.tx, t.ty);
+    // §4.7.5: 10-second pre-spawn warning. Emits an event UIScene picks
+    // up to draw the banner + arrow + countdown. The actual bandit spawn
+    // fires after warningLeadSec.
+    const ui = this.scene.scene.get('UI');
+    ui.events.emit('raid-warning', {
+      side: edge.side,
+      tx: edge.tx,
+      ty: edge.ty,
+      count: composition.length,
+      leadSec: BALANCE.raid.warningLeadSec,
+    });
+    this.scene.time.delayedCall(BALANCE.raid.warningLeadSec * 1000, () => {
+      composition.forEach((entry, i) => {
+        const dx = (i % 5) - 2;
+        const dy = Math.floor(i / 5);
+        const t = this.offsetEdge(edge, dx, dy);
+        this.deps.spawnBandit(entry.id, t.tx, t.ty);
+      });
+      ui.events.emit('raid-warning-end');
     });
   }
 

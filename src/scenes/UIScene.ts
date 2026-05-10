@@ -98,6 +98,8 @@ export class UIScene extends Phaser.Scene {
     });
     this.events.on('paint-mode-changed', this.onPaintModeChanged, this);
 
+    this.events.on('raid-warning', this.showRaidWarning, this);
+    this.events.on('raid-warning-end', this.hideRaidWarning, this);
     this.events.on('open-building-panel', this.openBuildingPanel, this);
     this.events.on('close-building-panel', this.closeBuildingPanel, this);
     this.events.on('open-worker-panel', this.openWorkerPanel, this);
@@ -189,6 +191,148 @@ export class UIScene extends Phaser.Scene {
   }
 
   // ---------- placement banner ---------------------------------------------
+
+  // ---------- raid warning (10s pre-spawn banner + arrow) ----------------
+
+  private raidBanner: Phaser.GameObjects.Container | null = null;
+  private raidBannerText: Phaser.GameObjects.Text | null = null;
+  private raidArrow: Phaser.GameObjects.Container | null = null;
+  private raidCountdownLeft = 0;
+  private raidCountdownTimer: Phaser.Time.TimerEvent | null = null;
+
+  private showRaidWarning(payload: {
+    side: 'top' | 'bottom' | 'left' | 'right';
+    count: number;
+    leadSec: number;
+  }): void {
+    this.hideRaidWarning();
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const bannerH = 48;
+
+    // Banner: top-of-screen red strip with the countdown.
+    const c = this.add.container(0, 38).setDepth(1300).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, bannerH, 0x6a0a0a, 0.92).setOrigin(0, 0));
+    c.add(
+      this.add
+        .rectangle(0, 0, w, bannerH, 0xff4040, 0)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, 0xff8080),
+    );
+    const text = this.add
+      .text(w / 2, bannerH / 2, '', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '15px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    c.add(text);
+    this.raidBanner = c;
+    this.raidBannerText = text;
+    this.raidCountdownLeft = payload.leadSec;
+    this.refreshRaidBannerText(payload.count);
+
+    // Pulsing red border on the banner so it grabs attention.
+    this.tweens.add({
+      targets: c.list[1],
+      alpha: { from: 0, to: 0.55 },
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // Directional arrow at the screen edge the bandits will come from.
+    this.raidArrow = this.makeRaidArrow(payload.side, w, h);
+
+    // Tick the countdown once a second.
+    this.raidCountdownTimer = this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => {
+        this.raidCountdownLeft = Math.max(0, this.raidCountdownLeft - 1);
+        this.refreshRaidBannerText(payload.count);
+      },
+    });
+  }
+
+  private refreshRaidBannerText(count: number): void {
+    if (!this.raidBannerText) return;
+    const t = this.raidCountdownLeft;
+    const mm = Math.floor(t / 60).toString().padStart(1, '0');
+    const ss = (t % 60).toString().padStart(2, '0');
+    this.raidBannerText.setText(`! RAID INCOMING — ${count} bandits — ${mm}:${ss}`);
+  }
+
+  private makeRaidArrow(
+    side: 'top' | 'bottom' | 'left' | 'right',
+    w: number,
+    h: number,
+  ): Phaser.GameObjects.Container {
+    // Arrow positioned just inside the relevant viewport edge, pointing
+    // outward toward where the bandits are coming from.
+    const c = this.add.container(0, 0).setDepth(1305).setScrollFactor(0);
+    const triSize = 24;
+    let x = w / 2;
+    let y = h / 2;
+    let rot = 0;
+    if (side === 'top') {
+      x = w / 2;
+      y = 100;
+      rot = 0;
+    } else if (side === 'bottom') {
+      x = w / 2;
+      y = h - 80;
+      rot = Math.PI;
+    } else if (side === 'left') {
+      x = 40;
+      y = h / 2;
+      rot = -Math.PI / 2;
+    } else {
+      x = w - 40;
+      y = h / 2;
+      rot = Math.PI / 2;
+    }
+    const tri = this.add
+      .triangle(0, 0, 0, triSize, triSize, triSize, triSize / 2, 0, 0xff4040)
+      .setStrokeStyle(2, 0xffffff);
+    c.setPosition(x, y);
+    c.add(tri);
+    tri.setRotation(rot);
+
+    // Bob the arrow toward the edge so it reads as "they're coming".
+    const dx = side === 'left' ? -8 : side === 'right' ? 8 : 0;
+    const dy = side === 'top' ? -8 : side === 'bottom' ? 8 : 0;
+    this.tweens.add({
+      targets: c,
+      x: x + dx,
+      y: y + dy,
+      duration: 400,
+      yoyo: true,
+      repeat: -1,
+    });
+    return c;
+  }
+
+  private hideRaidWarning(): void {
+    if (this.raidCountdownTimer) {
+      this.raidCountdownTimer.remove();
+      this.raidCountdownTimer = null;
+    }
+    if (this.raidBanner) {
+      this.tweens.killTweensOf(this.raidBanner.list);
+      this.raidBanner.destroy();
+      this.raidBanner = null;
+    }
+    if (this.raidArrow) {
+      this.tweens.killTweensOf(this.raidArrow);
+      this.raidArrow.destroy();
+      this.raidArrow = null;
+    }
+    this.raidBannerText = null;
+    this.raidCountdownLeft = 0;
+  }
+
+  // ---------- placement banner (mid-build ghost label) ----------------
 
   private placementBanner: Phaser.GameObjects.Container | null = null;
 
