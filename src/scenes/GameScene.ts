@@ -184,6 +184,45 @@ export class GameScene extends Phaser.Scene {
     const dt = delta / 1000;
     for (const w of this.workers) w.update(dt);
     for (const u of this.units) if (u.isAlive) u.update(dt);
+    this.tickTowers(dt);
+  }
+
+  // Per-tower cooldown so multiple towers fire independently. Keyed by
+  // Building.instanceId.
+  private towerCooldown = new Map<number, number>();
+
+  // §4.4 tower: auto-attack the nearest enemy unit within 5 tiles, 15
+  // damage every 2 seconds. Pure scene-side combat — no Building-side
+  // logic so towers stay decoupled from unit deps.
+  private tickTowers(dt: number): void {
+    for (const b of this.buildings) {
+      if (b.def.id !== 'tower' || !b.isConstructed) continue;
+      const cd = (this.towerCooldown.get(b.instanceId) ?? 0) - dt;
+      if (cd > 0) {
+        this.towerCooldown.set(b.instanceId, cd);
+        continue;
+      }
+      const enemy = this.findEnemy('player', b.worldX, b.worldY, 5);
+      if (!enemy) {
+        this.towerCooldown.set(b.instanceId, 0);
+        continue;
+      }
+      enemy.takeDamage(15);
+      this.towerCooldown.set(b.instanceId, 2);
+      this.drawTowerFlash(b.worldX, b.worldY, enemy.worldX, enemy.worldY);
+    }
+  }
+
+  private drawTowerFlash(x1: number, y1: number, x2: number, y2: number): void {
+    const g = this.add.graphics().setDepth(Math.max(y1, y2) + 5);
+    g.lineStyle(3, 0xffd060, 1);
+    g.lineBetween(x1, y1 - 18, x2, y2 - 6);
+    this.tweens.add({
+      targets: g,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => g.destroy(),
+    });
   }
 
   private unitDeps() {
