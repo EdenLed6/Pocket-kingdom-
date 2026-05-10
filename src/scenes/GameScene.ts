@@ -989,6 +989,18 @@ export class GameScene extends Phaser.Scene {
       else if (cur === TILE.WATER) next = TILE.GRASS;
     }
     if (next === null) return;
+    // Eden's rule: nothing inside water. Reject painting water on a tile
+    // a worker or soldier currently stands on — would otherwise leave the
+    // unit stranded inside an un-walkable water tile.
+    if (next === TILE.WATER) {
+      for (const w of this.workers) {
+        if (w.tileX === tx && w.tileY === ty) return;
+      }
+      for (const u of this.units) {
+        if (!u.isAlive) continue;
+        if (u.tileX === tx && u.tileY === ty) return;
+      }
+    }
     this.mapData[ty][tx] = next;
     if (next === TILE.WATER || cur === TILE.WATER) {
       // Water flips don't touch the tilemap layer — water is rendered by
