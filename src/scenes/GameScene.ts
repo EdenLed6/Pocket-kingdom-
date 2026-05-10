@@ -598,8 +598,14 @@ export class GameScene extends Phaser.Scene {
       if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) continue;
       if (this.mapData[ny][nx] === TILE.WATER) return false;
     }
+    // Trees may stack with other trees (dense forests); but rocks /
+    // bushes / sheep can't share a tile with anything already placed.
+    // Spawn order is forests → rocks → bushes → sheep, so this stops a
+    // rock cluster from landing in the middle of an existing forest.
+    const tileK = this.tileKey(tx, ty);
+    if (kind !== 'tree' && this.nodeTiles.has(tileK)) return false;
     this.nodes.push(new ResourceNode(this, kind, worldX, worldY));
-    this.nodeTiles.add(this.tileKey(tx, ty));
+    this.nodeTiles.add(tileK);
     return true;
   }
 
