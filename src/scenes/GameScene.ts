@@ -305,12 +305,16 @@ export class GameScene extends Phaser.Scene {
       const inner: Phaser.Math.Vector2[] = [];
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2;
-        const j = 0.86 + next() * 0.28; // 0.86 - 1.14
+        // Edge factor 1.10-1.34 so the blob ALWAYS over-covers the
+        // underlying mapData WATER tiles (which max out at ~1.07 × radius
+        // due to the per-tile threshold jitter in the JSON generator).
+        // No water square ever peeks through, regardless of putTileAt.
+        const j = 1.10 + next() * 0.24;
         outer.push(new Phaser.Math.Vector2(cx + Math.cos(a) * rx * j, cy + Math.sin(a) * ry * j));
         inner.push(
           new Phaser.Math.Vector2(
-            cx + Math.cos(a) * rx * (j - 0.08),
-            cy + Math.sin(a) * ry * (j - 0.08),
+            cx + Math.cos(a) * rx * (j - 0.10),
+            cy + Math.sin(a) * ry * (j - 0.10),
           ),
         );
       }
