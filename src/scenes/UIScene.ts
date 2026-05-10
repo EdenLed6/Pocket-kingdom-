@@ -57,6 +57,33 @@ export class UIScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Reset every per-game collection / handle. scene.restart() reuses the
+    // same class instance so TS field initializers don't re-run; without
+    // this, references like `lines`, `cards`, and the various transient
+    // panel containers would point at destroyed objects from the previous
+    // run.
+    this.lines = [];
+    this.cards = [];
+    this.paintModeLabel = null;
+    this.drawer = null;
+    this.workerPanel = null;
+    this.workerPanelWorker = null;
+    this.workerPanelStateText = null;
+    this.workerPanelTimer = null;
+    this.pausePanel = null;
+    this.settingsPanel = null;
+    this.gameOverPanel = null;
+    this.raidBanner = null;
+    this.raidBannerText = null;
+    this.raidArrow = null;
+    this.raidCountdownLeft = 0;
+    this.raidCountdownTimer = null;
+    this.placementBanner = null;
+    this.savedToast = null;
+    this.buildingPanel = null;
+    this.panelBarracksId = -1;
+    this.researchPanel = null;
+
     const w = this.scale.width;
     this.add.rectangle(0, 0, w, 36, 0x000000, 0.55).setOrigin(0, 0).setDepth(1000);
 

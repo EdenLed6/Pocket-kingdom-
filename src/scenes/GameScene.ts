@@ -88,6 +88,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Reset every per-game collection. scene.restart() reuses the same
+    // class instance, so TS class-field initializers do NOT re-run on
+    // restart — without this, stale Workers/Units/Buildings from the
+    // previous game would linger in the arrays and update() would call
+    // sprite.play() on their already-destroyed sprites (whose .anims is
+    // null), crashing with "Cannot read properties of undefined (reading
+    // 'play')".
+    this.nodes = [];
+    this.workers = [];
+    this.buildings = [];
+    this.units = [];
+    this.selectedSoldier = null;
+    this.selectedBarracks = null;
+    this.selectedWorker = null;
+    this.placement = null;
+    this.buildingTiles = new Set<number>();
+    this.nodeTiles = new Set<number>();
+    this.towerCooldown = new Map<number, number>();
+    this.paintMode = 'off';
+    this.painting = false;
+    this.lakePolygons = [];
+    this.nightOverlay = null;
+
     const json = this.cache.json.get('main_map') as MapJson | undefined;
     if (!json) throw new Error('main_map JSON not found in cache');
     this.mapData = json.data;
