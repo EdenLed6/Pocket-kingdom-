@@ -65,6 +65,10 @@ export class GameScene extends Phaser.Scene {
   private paintMode: 'off' | 'road' | 'water' = 'off';
   private painting = false;
   private tilemapLayer!: Phaser.Tilemaps.TilemapLayer | Phaser.Tilemaps.TilemapGPULayer;
+  // Single Graphics layer that paints every WATER tile in mapData
+  // (lakes + dug channels). Redrawn whenever mapData water changes.
+  private waterGraphics!: Phaser.GameObjects.Graphics;
+  private lakePolygons: Phaser.Math.Vector2[][] = [];
 
   constructor() {
     super('Game');
@@ -93,11 +97,12 @@ export class GameScene extends Phaser.Scene {
     const worldH = MAP_HEIGHT_TILES * TILE_SIZE;
     this.cameras.main.setBounds(0, 0, worldW, worldH);
 
-    // Replace the squared water tiles in the rendered tilemap with grass
-    // so we can draw smooth lake blobs on top. mapData keeps WATER markers
-    // for pathfinding.
-    this.hideTilemapWater();
-    this.drawLakes();
+    // mapData starts all-grass (regenerated). Mark every tile that falls
+    // inside a lake polygon as WATER, then render water + future painted
+    // channels via a single Graphics layer. Pathfinding uses mapData.
+    this.waterGraphics = this.add.graphics().setDepth(2);
+    this.markLakeWater();
+    this.redrawWater();
 
     this.spawnTownHall();
     this.spawnNodes();
@@ -271,67 +276,137 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Render water tiles as grass in the visible tilemap so the smooth lake
-  // graphics layer can paint on top without showing underlying squares.
-  // mapData keeps WATER markers — pathfinding still blocks.
-  private hideTilemapWater(): void {
-    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
-      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
-        if (this.mapData[ty][tx] === TILE.WATER) {
-          this.tilemapLayer.putTileAt(TILE.GRASS, tx, ty);
-        }
-      }
-    }
-  }
-
-  // Draw each lake as an irregular polygon (24 jittered points around an
-  // ellipse) with darker rim + lighter inner fill + horizontal wave hints.
-  // Replaces the staircase tilemap edges entirely.
-  private drawLakes(): void {
-    const g = this.add.graphics().setDepth(2);
+  // Generate jittered polygons for every LAKE config (deterministic seed).
+  // Used by both markLakeWater (sets mapData.WATER for tiles inside) and
+  // redrawWater (the visible Graphics layer also draws inside the same
+  // shape) so what's painted matches what blocks pathfinding.
+  private buildLakePolygons(): void {
     let seed = 7;
     const next = () => {
       seed = (seed * 9301 + 49297) % 233280;
       return seed / 233280;
     };
     const N = 28;
+    this.lakePolygons = [];
     for (const lake of LAKES) {
       const cx = (lake.cx + 0.5) * TILE_SIZE;
       const cy = (lake.cy + 0.5) * TILE_SIZE;
       const rx = lake.rx * TILE_SIZE;
       const ry = lake.ry * TILE_SIZE;
-
-      const outer: Phaser.Math.Vector2[] = [];
-      const inner: Phaser.Math.Vector2[] = [];
+      const pts: Phaser.Math.Vector2[] = [];
       for (let i = 0; i < N; i++) {
         const a = (i / N) * Math.PI * 2;
-        // Edge factor 1.10-1.34 so the blob ALWAYS over-covers the
-        // underlying mapData WATER tiles (which max out at ~1.07 × radius
-        // due to the per-tile threshold jitter in the JSON generator).
-        // No water square ever peeks through, regardless of putTileAt.
-        const j = 1.10 + next() * 0.24;
-        outer.push(new Phaser.Math.Vector2(cx + Math.cos(a) * rx * j, cy + Math.sin(a) * ry * j));
-        inner.push(
-          new Phaser.Math.Vector2(
-            cx + Math.cos(a) * rx * (j - 0.10),
-            cy + Math.sin(a) * ry * (j - 0.10),
-          ),
-        );
+        const j = 1.0 + next() * 0.22; // 1.00-1.22 organic shoreline
+        pts.push(new Phaser.Math.Vector2(cx + Math.cos(a) * rx * j, cy + Math.sin(a) * ry * j));
       }
-      // Outer rim (darker) + inner body (lighter).
-      g.fillStyle(0x3a83bc, 1);
-      g.fillPoints(outer, true);
-      g.fillStyle(0x4a93cc, 1);
-      g.fillPoints(inner, true);
-      // Wave highlights — short horizontal stripes within the ellipse.
-      g.fillStyle(0x86c2eb, 0.55);
-      for (let yo = -ry + 8; yo < ry; yo += 14) {
-        const t = yo / ry;
-        const w = rx * Math.sqrt(Math.max(0, 1 - t * t)) * (0.55 + next() * 0.2);
-        const offset = (next() - 0.5) * w * 0.6;
-        g.fillRect(cx - w / 2 + offset, cy + yo, w, 1);
+      this.lakePolygons.push(pts);
+    }
+  }
+
+  // Mark mapData[ty][tx] = WATER for every tile whose centre falls inside
+  // any lake polygon. Done once at boot so spawnNodes / pathfinding /
+  // placement all see the lakes correctly.
+  private markLakeWater(): void {
+    this.buildLakePolygons();
+    for (const polygon of this.lakePolygons) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of polygon) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      const txMin = Math.max(0, Math.floor(minX / TILE_SIZE));
+      const txMax = Math.min(MAP_WIDTH_TILES - 1, Math.ceil(maxX / TILE_SIZE));
+      const tyMin = Math.max(0, Math.floor(minY / TILE_SIZE));
+      const tyMax = Math.min(MAP_HEIGHT_TILES - 1, Math.ceil(maxY / TILE_SIZE));
+      for (let ty = tyMin; ty <= tyMax; ty++) {
+        for (let tx = txMin; tx <= txMax; tx++) {
+          const cx = (tx + 0.5) * TILE_SIZE;
+          const cy = (ty + 0.5) * TILE_SIZE;
+          if (this.pointInPolygon(cx, cy, polygon)) {
+            this.mapData[ty][tx] = TILE.WATER;
+          }
+        }
       }
     }
+  }
+
+  private pointInPolygon(x: number, y: number, polygon: Phaser.Math.Vector2[]): boolean {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].x, yi = polygon[i].y;
+      const xj = polygon[j].x, yj = polygon[j].y;
+      const intersect =
+        yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // One unified water renderer: layered overlapping circles per WATER
+  // tile in mapData. Both lakes (whole regions) and dug channels (single
+  // tiles or thin lines) use this same code path so they look identical.
+  // Called at boot and after each paint-mode water toggle.
+  private redrawWater(): void {
+    const g = this.waterGraphics;
+    g.clear();
+    const tiles: { tx: number; ty: number; cx: number; cy: number }[] = [];
+    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
+      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
+        if (this.mapData[ty][tx] !== TILE.WATER) continue;
+        tiles.push({
+          tx,
+          ty,
+          cx: (tx + 0.5) * TILE_SIZE,
+          cy: (ty + 0.5) * TILE_SIZE,
+        });
+      }
+    }
+    if (tiles.length === 0) return;
+    // Pass 1 — dark outer rim. Big enough that adjacent water circles
+    // fully cover each other's inner area; the rim only shows up at
+    // boundaries with non-water tiles, giving a natural deep-water edge.
+    g.fillStyle(0x2a73a8, 1);
+    for (const t of tiles) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.86);
+    // Pass 2 — main water body (medium blue).
+    g.fillStyle(0x4a93cc, 1);
+    for (const t of tiles) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.74);
+    // Pass 3 — soft highlight to give depth.
+    g.fillStyle(0x65a8d8, 1);
+    for (const t of tiles) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.58);
+    // Pass 4 — interior wave + sparkle hints. Skip edge tiles so the
+    // rim stays clean; deterministic per-tile so it stays still.
+    g.fillStyle(0xb6dcef, 0.85);
+    for (const t of tiles) {
+      if (this.isWaterEdge(t.tx, t.ty)) continue;
+      const h = ((t.tx * 73856093) ^ (t.ty * 19349663)) >>> 0;
+      const ox = ((h % 1000) / 1000 - 0.5) * TILE_SIZE * 0.6;
+      const oy = ((((h >> 7) % 1000) / 1000) - 0.5) * TILE_SIZE * 0.6;
+      g.fillRect(t.cx + ox - 5, t.cy + oy, 10, 1);
+    }
+    g.fillStyle(0xeaf5fc, 0.9);
+    for (const t of tiles) {
+      if (this.isWaterEdge(t.tx, t.ty)) continue;
+      const h = ((t.tx * 50331653) ^ (t.ty * 12582917)) >>> 0;
+      const ox = ((h % 1000) / 1000 - 0.5) * TILE_SIZE * 0.5;
+      const oy = ((((h >> 7) % 1000) / 1000) - 0.5) * TILE_SIZE * 0.5;
+      g.fillRect(t.cx + ox, t.cy + oy, 2, 2);
+    }
+  }
+
+  private isWaterEdge(tx: number, ty: number): boolean {
+    const ds: [number, number][] = [
+      [tx - 1, ty],
+      [tx + 1, ty],
+      [tx, ty - 1],
+      [tx, ty + 1],
+    ];
+    for (const [nx, ny] of ds) {
+      if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) return true;
+      if (this.mapData[ny][nx] !== TILE.WATER) return true;
+    }
+    return false;
   }
 
   // AoM-style biome placement: dense forests + rock clusters + berry
@@ -434,6 +509,16 @@ export class GameScene extends Phaser.Scene {
     const k = this.tileKey(tx, ty);
     if (reserved.has(k)) return false;
     if (this.mapData[ty][tx] !== TILE.GRASS) return false;
+    // Eden's request: nothing should look like it's standing in water.
+    // Reject grass tiles directly adjacent (4-conn) to water so jittered
+    // sprite positions never visually overhang into a lake.
+    const ds: [number, number][] = [
+      [tx - 1, ty], [tx + 1, ty], [tx, ty - 1], [tx, ty + 1],
+    ];
+    for (const [nx, ny] of ds) {
+      if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) continue;
+      if (this.mapData[ny][nx] === TILE.WATER) return false;
+    }
     this.nodes.push(new ResourceNode(this, kind, tx, ty));
     this.nodeTiles.add(k);
     reserved.add(k);
@@ -819,7 +904,13 @@ export class GameScene extends Phaser.Scene {
     }
     if (next === null) return;
     this.mapData[ty][tx] = next;
-    this.tilemapLayer.putTileAt(next, tx, ty);
+    if (next === TILE.WATER || cur === TILE.WATER) {
+      // Water flips don't touch the tilemap layer — water is rendered by
+      // the unified Graphics layer that scans mapData. Tilemap stays grass.
+      this.redrawWater();
+    } else {
+      this.tilemapLayer.putTileAt(next, tx, ty);
+    }
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]): void {
