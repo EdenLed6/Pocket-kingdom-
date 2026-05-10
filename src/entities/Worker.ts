@@ -25,6 +25,11 @@ interface WorkerDeps {
     resource: ResourceType,
   ) => ResourceNode | null;
   findNearestSite: (fromX: number, fromY: number) => Building | null;
+  // Returns true if any hostile (bandit) is within `withinTiles` of the
+  // worker. Used to trigger the §4.3 fleeing state.
+  isBanditNearby: (fromX: number, fromY: number, withinTiles: number) => boolean;
+  // Town Hall south-centre tile — the safe haven a fleeing worker runs to.
+  getHomeTile: () => TileXY;
 }
 
 type State =
@@ -36,7 +41,10 @@ type State =
   | { kind: 'moving-to-site'; site: Building }
   | { kind: 'building'; site: Building }
   | { kind: 'moving-to-farm'; farm: Building }
-  | { kind: 'tending'; farm: Building };
+  | { kind: 'tending'; farm: Building }
+  // §4.3 fleeing — bandit within fleeRangeTiles. Worker drops what
+  // they're doing and runs toward the Town Hall.
+  | { kind: 'fleeing' };
 
 const CARRY_TINT_BY_RESOURCE: Record<ResourceType, number> = {
   wood: 0xc8ffb0,
@@ -182,6 +190,26 @@ export class Worker {
     this.state = { kind: 'moving-to-farm', farm };
   }
 
+  // §4.3 fleeing: drop everything and head for the Town Hall. Cargo is
+  // not deposited (the player re-orders deposit after the threat passes);
+  // any active builder/tender slot is released so we don't deadlock the
+  // structure.
+  private startFleeing(): void {
+    this.releaseBuildingSlot();
+    this.pendingFarmAfterDeposit = null;
+    this.pendingNodeAfterDeposit = null;
+    const home = this.deps.getHomeTile();
+    const path = this.computePath(home);
+    if (!path) {
+      // Nowhere safe to go — at least mark fleeing so we keep checking.
+      this.state = { kind: 'fleeing' };
+      this.path = [];
+      return;
+    }
+    this.path = pathToWaypoints(path);
+    this.state = { kind: 'fleeing' };
+  }
+
   private releaseBuildingSlot(): void {
     if (this.state.kind === 'building') {
       this.state.site.activeBuilders = Math.max(0, this.state.site.activeBuilders - 1);
@@ -258,6 +286,23 @@ export class Worker {
     }
     this.sprite.setDepth(this.sprite.y);
     this.ring.setDepth(this.sprite.y - 1);
+
+    // §4.3 flee check — runs every frame and overrides any other state.
+    // If a bandit is within fleeRangeTiles, drop what we're doing and
+    // bolt for home. If no threat is in range and we're already fleeing,
+    // relax back to idle (player re-assigns).
+    const banditNear = this.deps.isBanditNearby(
+      this.sprite.x,
+      this.sprite.y,
+      BALANCE.worker.fleeRangeTiles,
+    );
+    if (banditNear && this.state.kind !== 'fleeing') {
+      this.startFleeing();
+    } else if (!banditNear && this.state.kind === 'fleeing') {
+      this.state = { kind: 'idle' };
+      this.path = [];
+    }
+
     // Drive the worker's animation by FSM state. Phaser ignores a play()
     // call for an already-playing anim, so this is cheap per-frame.
     const animKey = this.selectAnimKey();
@@ -273,6 +318,7 @@ export class Worker {
       case 'moving-to-dropoff':
       case 'moving-to-site':
       case 'moving-to-farm':
+      case 'fleeing':
         this.advanceAlongPath(dtSec);
         return;
 
@@ -443,6 +489,8 @@ export class Worker {
         return 'Heading to farm';
       case 'tending':
         return 'Tending farm';
+      case 'fleeing':
+        return 'Fleeing!';
     }
   }
 
@@ -455,6 +503,7 @@ export class Worker {
       case 'moving-to-dropoff':
       case 'moving-to-site':
       case 'moving-to-farm':
+      case 'fleeing':
         return 'worker_run';
       case 'gathering': {
         const r = this.state.node.resource;

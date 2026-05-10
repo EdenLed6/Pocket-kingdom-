@@ -290,6 +290,8 @@ export class GameScene extends Phaser.Scene {
         deposit: this.deposit.bind(this),
         findNearestNode: this.findNearestNode.bind(this),
         findNearestSite: this.findNearestSite.bind(this),
+        isBanditNearby: this.isBanditNearby.bind(this),
+        getHomeTile: this.getHomeTile.bind(this),
       });
       this.workers.push(w);
     });
@@ -700,6 +702,8 @@ export class GameScene extends Phaser.Scene {
       deposit: this.deposit.bind(this),
       findNearestNode: this.findNearestNode.bind(this),
       findNearestSite: this.findNearestSite.bind(this),
+      isBanditNearby: this.isBanditNearby.bind(this),
+      getHomeTile: this.getHomeTile.bind(this),
     };
     for (let i = 0; i < BALANCE.startingWorkers; i++) {
       this.workers.push(new Worker(i, this, spawnTiles[i].tx, spawnTiles[i].ty, deps));
@@ -723,6 +727,19 @@ export class GameScene extends Phaser.Scene {
   // worker's resource. Town Hall always accepts everything; Lumber Mill /
   // Quarry / Farm / Hunter's Lodge accept their specific kind. Worker calls
   // this when full.
+  // §4.3 fleeing detection: any enemy unit within `withinTiles` of the
+  // worker. Reuses the unit-side findEnemy with side='player' so we
+  // don't duplicate scanning logic.
+  private isBanditNearby(fromX: number, fromY: number, withinTiles: number): boolean {
+    return this.findEnemy('player', fromX, fromY, withinTiles) !== null;
+  }
+
+  // Town Hall south-centre tile — workers run to it when fleeing.
+  private getHomeTile(): TileXY {
+    const th = BALANCE.townHall;
+    return { tx: th.tileX + 1, ty: th.tileY + th.sizeTiles };
+  }
+
   private getDropoffTile(resource: ResourceType, fromX: number, fromY: number): TileXY {
     const candidates = this.dropoffCandidates(resource);
     let best = candidates[0];
