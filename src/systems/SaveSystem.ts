@@ -59,6 +59,9 @@ export interface SaveData {
   // lake tiles are NOT saved because they're regenerated from LAKES on
   // boot, so we'd double-mark them otherwise.
   paintedTiles: SavedTile[];
+  // Optional so older saves (without this field) still load — TechSystem
+  // handles missing input by clearing.
+  unlockedTechs?: string[];
 }
 
 // Pure module — no constructor needed. GameScene calls these directly.

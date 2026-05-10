@@ -3,6 +3,9 @@ import { BUILDING_DEFS, BUILDING_ORDER, type BuildingId } from '../data/building
 import { UNIT_DEFS, PLAYER_UNIT_ORDER } from '../data/units';
 import type { Worker } from '../entities/Worker';
 import { AudioSystem } from '../systems/AudioSystem';
+import { TechSystem } from '../systems/TechSystem';
+import { TECH_DEFS, TECH_ORDER, type TechId } from '../data/tech';
+import type { ResourceType } from '../data/balance';
 
 const HUD_FONT = {
   fontFamily: 'ui-monospace, monospace',
@@ -790,10 +793,152 @@ export class UIScene extends Phaser.Scene {
       `Train Worker\n30F 20W\n10s`,
       CARD_FONT,
     );
-    panel.on(Phaser.Input.Events.POINTER_UP, () => this.events.emit('train-worker'));
+    panel.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
+      this.events.emit('train-worker');
+    });
     c.add(panel);
     c.add(icon);
     c.add(text);
+
+    // Research button to the right of the Train Worker card. Opens a
+    // research modal panel listing all techs with their costs.
+    const rx = x + cardW + 10;
+    const research = this.add
+      .rectangle(rx, y, 90, cardH, 0x222230, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0xffd060)
+      .setInteractive({ useHandCursor: true });
+    const rText = this.add.text(rx + 45, y + cardH / 2, 'Research', {
+      ...CARD_FONT,
+      align: 'center',
+    }).setOrigin(0.5);
+    research.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
+      this.openResearchPanel();
+    });
+    c.add(research);
+    c.add(rText);
+  }
+
+  private researchPanel: Phaser.GameObjects.Container | null = null;
+  private openResearchPanel(): void {
+    if (this.researchPanel) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const c = this.add.container(0, 0).setDepth(2000).setScrollFactor(0);
+    c.add(
+      this.add
+        .rectangle(0, 0, w, h, 0x000000, 0.55)
+        .setOrigin(0, 0)
+        .setInteractive(),
+    );
+    const panelW = Math.min(w - 32, 480);
+    const panelH = Math.min(h - 80, 600);
+    const px = (w - panelW) / 2;
+    const py = (h - panelH) / 2;
+    c.add(
+      this.add
+        .rectangle(px, py, panelW, panelH, 0x1a1a24, 0.98)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, 0xffd060),
+    );
+    c.add(
+      this.add
+        .text(px + 16, py + 12, 'Research', { ...HUD_FONT, fontSize: '20px' }),
+    );
+    const close = this.add
+      .text(px + panelW - 16, py + 8, '×', { ...HUD_FONT, fontSize: '28px' })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    close.on(Phaser.Input.Events.POINTER_UP, () => this.closeResearchPanel());
+    c.add(close);
+
+    const cardH = 70;
+    const gap = 8;
+    TECH_ORDER.forEach((id, i) => {
+      const cy = py + 50 + i * (cardH + gap);
+      const card = this.makeTechCard(px + 12, cy, panelW - 24, cardH, id);
+      c.add(card);
+    });
+
+    this.researchPanel = c;
+    // Listen for unlocks so the open panel reflects the new state. We
+    // register on `.on` (not `.once`) so a single subscription survives
+    // multiple unlocks; closeResearchPanel removes it.
+    this.events.on('tech-unlocked', this.refreshResearchPanel, this);
+  }
+
+  private refreshResearchPanel(): void {
+    if (!this.researchPanel) return;
+    this.closeResearchPanel();
+    this.openResearchPanel();
+  }
+
+  private closeResearchPanel(): void {
+    if (!this.researchPanel) return;
+    this.events.off('tech-unlocked', this.refreshResearchPanel, this);
+    this.researchPanel.destroy();
+    this.researchPanel = null;
+  }
+
+  private makeTechCard(
+    x: number, y: number, w: number, h: number, id: TechId,
+  ): Phaser.GameObjects.Container {
+    const def = TECH_DEFS[id];
+    const unlocked = TechSystem.has(id);
+    const card = this.add.container(0, 0);
+    const affordable = this.canAfford(def.cost);
+    const prereqOk = !def.requiresBuilding || this.hasConstructed(def.requiresBuilding);
+    const enabled = !unlocked && affordable && prereqOk;
+    const stroke = unlocked ? 0x60c060 : enabled ? 0xffd060 : 0x444454;
+    const bg = this.add
+      .rectangle(x, y, w, h, 0x222230, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, stroke);
+    if (enabled) bg.setInteractive({ useHandCursor: true });
+    card.add(bg);
+    card.add(this.add.text(x + 12, y + 8, def.name, { ...HUD_FONT, fontSize: '15px' }));
+    card.add(
+      this.add.text(x + 12, y + 28, def.description, { ...CARD_FONT, color: '#cfcfcf' }),
+    );
+    const costText = unlocked
+      ? 'Researched ✓'
+      : Object.entries(def.cost)
+          .map(([r, n]) => `${n}${r[0].toUpperCase()}`)
+          .join(' ') + (prereqOk ? '' : `  (req: ${def.requiresBuilding})`);
+    card.add(
+      this.add
+        .text(x + w - 12, y + h - 8, costText, {
+          ...CARD_FONT,
+          color: unlocked ? '#80c080' : enabled ? '#ffd060' : '#888888',
+        })
+        .setOrigin(1, 1),
+    );
+    if (enabled) {
+      bg.on(Phaser.Input.Events.POINTER_UP, () => {
+        AudioSystem.play('button_tap');
+        this.events.emit('tech-unlock-request', { id });
+      });
+    }
+    return card;
+  }
+
+  private canAfford(cost: Partial<Record<ResourceType, number>>): boolean {
+    // GameScene keys resources by their bare name in the registry.
+    for (const [r, amt] of Object.entries(cost) as [ResourceType, number][]) {
+      const cur = (this.registry.get(r) as number) ?? 0;
+      if (cur < amt) return false;
+    }
+    return true;
+  }
+
+  private hasConstructed(_id: string): boolean {
+    // UIScene doesn't track buildings directly; we ask the registry, which
+    // GameScene maintains as 'builtIds' (buildings whose construction has
+    // ever completed during this run).
+    const built = this.registry.get('builtIds') as Set<string> | undefined;
+    return built ? built.has(_id) : false;
   }
 
   private fillBarracksPanel(c: Phaser.GameObjects.Container): void {

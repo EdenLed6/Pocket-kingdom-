@@ -4,6 +4,7 @@ import { UNIT_DEFS, type UnitDef, type UnitId, type Side } from '../data/units';
 import { findPath, type TileXY } from '../utils/pathfinding';
 import { AudioSystem } from '../systems/AudioSystem';
 import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
+import { TechSystem } from '../systems/TechSystem';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -45,6 +46,10 @@ export class Unit {
   readonly instanceId: number;
   readonly def: UnitDef;
   readonly side: Side;
+  // hpMax may exceed def.hpMax when the player has researched Discipline;
+  // captured at construction so a mid-game unlock doesn't retro-buff
+  // already-spawned units.
+  readonly hpMax: number;
   hp: number;
   private state: UnitState = { kind: 'idle' };
   private cooldownSec = 0;
@@ -67,7 +72,9 @@ export class Unit {
     this.instanceId = nextId++;
     this.def = UNIT_DEFS[id];
     this.side = this.def.side;
-    this.hp = this.def.hpMax;
+    const hpMult = this.side === 'player' ? TechSystem.unitHpMultiplier() : 1;
+    this.hpMax = Math.floor(this.def.hpMax * hpMult);
+    this.hp = this.hpMax;
     this.deps = deps;
 
     const wx = tileX * TILE_SIZE + TILE_SIZE / 2;
@@ -286,7 +293,7 @@ export class Unit {
   }
 
   private drawHpBar(): void {
-    if (this.hp >= this.def.hpMax) {
+    if (this.hp >= this.hpMax) {
       this.hpBar.clear();
       return;
     }
@@ -294,7 +301,7 @@ export class Unit {
     const H = 3;
     const x = this.sprite.x - W / 2;
     const y = this.sprite.y - this.sprite.displayHeight * 0.95;
-    const ratio = Math.max(0, this.hp / this.def.hpMax);
+    const ratio = Math.max(0, this.hp / this.hpMax);
     this.hpBar.clear();
     this.hpBar.fillStyle(0x000000, 0.7);
     this.hpBar.fillRect(x - 1, y - 1, W + 2, H + 2);

@@ -3,6 +3,7 @@ import { TILE_SIZE } from '../data/tiles';
 import { BUILDING_DEFS, type BuildingDef, type BuildingId } from '../data/buildings';
 import { AudioSystem } from '../systems/AudioSystem';
 import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
+import { TechSystem } from '../systems/TechSystem';
 
 let nextId = 0;
 
@@ -15,6 +16,9 @@ export class Building {
   readonly worldX: number;
   readonly worldY: number;
   hp: number;
+  // Captured at construction so a mid-game Reinforced Walls unlock doesn't
+  // retro-buff already-built buildings.
+  readonly hpMax: number;
   // Construction progress measured in worker-seconds. When this reaches
   // def.buildTimeSec the building flips to constructed = true.
   buildProgress = 0;
@@ -40,9 +44,10 @@ export class Building {
     this.tileY = tileY;
     this.worldX = (tileX + this.def.footprint.w / 2) * TILE_SIZE;
     this.worldY = (tileY + this.def.footprint.h / 2) * TILE_SIZE;
+    this.hpMax = Math.floor(this.def.hpMax * TechSystem.buildingHpMultiplier());
     // Sites start at 10% HP per §6.3 spirit ("0% hp ghost"); we use a small
     // positive value so a half-built site can still register as standing.
-    this.hp = Math.max(1, Math.floor(this.def.hpMax * 0.1));
+    this.hp = Math.max(1, Math.floor(this.hpMax * 0.1));
 
     const south = (tileY + this.def.footprint.h) * TILE_SIZE;
     this.sprite = scene.add
@@ -161,7 +166,7 @@ export class Building {
   markPrebuilt(): void {
     this.buildProgress = this.def.buildTimeSec;
     this.isConstructed = true;
-    this.hp = this.def.hpMax;
+    this.hp = this.hpMax;
     this.sprite.setAlpha(1);
     this.progressBar.destroy();
   }
@@ -171,7 +176,7 @@ export class Building {
     this.buildProgress = Math.min(this.def.buildTimeSec, this.buildProgress + seconds);
     this.hp = Math.max(
       this.hp,
-      Math.floor((this.buildProgress / this.def.buildTimeSec) * this.def.hpMax),
+      Math.floor((this.buildProgress / this.def.buildTimeSec) * this.hpMax),
     );
     this.drawProgressBar();
     if (this.buildProgress >= this.def.buildTimeSec) {
@@ -181,7 +186,7 @@ export class Building {
 
   private completeConstruction(): void {
     this.isConstructed = true;
-    this.hp = this.def.hpMax;
+    this.hp = this.hpMax;
     this.sprite.setAlpha(1);
     this.progressBar.destroy();
     if (this.dustTimer) {

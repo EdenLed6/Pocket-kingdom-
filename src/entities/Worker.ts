@@ -6,6 +6,7 @@ import type { ResourceNode } from './ResourceNode';
 import type { Building } from './Building';
 import { AudioSystem } from '../systems/AudioSystem';
 import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
+import { TechSystem } from '../systems/TechSystem';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -132,7 +133,7 @@ export class Worker {
       this.startMoveToDropoff(null);
       return;
     }
-    if (this.inventoryAmount >= BALANCE.worker.carryCapacity) {
+    if (this.inventoryAmount >= BALANCE.worker.carryCapacity + TechSystem.carryCapacityBonus()) {
       this.startMoveToDropoff(node);
       return;
     }
@@ -399,7 +400,7 @@ export class Worker {
       this.state = {
         kind: 'gathering',
         node,
-        remainingSec: node.gatherTimeSec,
+        remainingSec: node.gatherTimeSec * TechSystem.gatherTimeMultiplier(node.resource),
       };
       return;
     }

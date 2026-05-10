@@ -16,6 +16,8 @@ import { PowerSystem } from '../systems/PowerSystem';
 import { RaidSystem, type BanditId } from '../systems/RaidSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
+import { TechSystem } from '../systems/TechSystem';
+import { TECH_DEFS, type TechId } from '../data/tech';
 import {
   SaveSystem,
   SAVE_VERSION,
@@ -140,6 +142,7 @@ export class GameScene extends Phaser.Scene {
     ui.events.on('build-cancel', this.cancelPlacement, this);
     ui.events.on('train-unit', this.onTrainUnitRequest, this);
     ui.events.on('train-worker', this.onTrainWorkerRequest, this);
+    ui.events.on('tech-unlock-request', this.onTechUnlockRequest, this);
     ui.events.on('road-toggle', this.toggleRoadMode, this);
     ui.events.on('save-now', () => {
       SaveSystem.save(this.buildSnapshot());
@@ -328,6 +331,41 @@ export class GameScene extends Phaser.Scene {
   }
 
   // §4.3: Town Hall trains workers. Cost 30 food + 20 wood, 10s.
+  private onTechUnlockRequest(payload: { id: TechId }): void {
+    const def = TECH_DEFS[payload.id];
+    if (!def) return;
+    if (TechSystem.has(payload.id)) return;
+    // Building prereq.
+    if (def.requiresBuilding) {
+      const have = this.buildings.some(
+        (b) => b.def.id === def.requiresBuilding && b.isConstructed,
+      );
+      if (!have) return;
+    }
+    // Cost gate.
+    for (const [r, amt] of Object.entries(def.cost) as [ResourceType, number][]) {
+      const cur = (this.registry.get(REGISTRY_KEY[r]) as number) ?? 0;
+      if (cur < amt) return;
+    }
+    // Deduct + unlock.
+    for (const [r, amt] of Object.entries(def.cost) as [ResourceType, number][]) {
+      const cur = (this.registry.get(REGISTRY_KEY[r]) as number) ?? 0;
+      this.registry.set(REGISTRY_KEY[r], cur - amt);
+    }
+    TechSystem.unlock(payload.id);
+    // Forester one-shot: bump caps now (caps are stored in registry, not on
+    // the building defs, so we apply the delta directly here).
+    const bonus = TechSystem.consumeOneShotCapBonus();
+    for (const [r, amt] of Object.entries(bonus) as [ResourceType, number][]) {
+      const cur = (this.registry.get(REGISTRY_CAP_KEY[r]) as number) ?? 0;
+      this.registry.set(REGISTRY_CAP_KEY[r], cur + amt);
+    }
+    AudioSystem.play('build_complete');
+    JuiceSystem.shake(this, 0.003, 100);
+    const ui = this.scene.get('UI');
+    ui.events.emit('tech-unlocked', payload.id);
+  }
+
   private onTrainWorkerRequest(): void {
     const cost = BALANCE.workerTrain.cost;
     const wood = (this.registry.get(REGISTRY_KEY.wood) as number) ?? 0;
@@ -774,6 +812,7 @@ export class GameScene extends Phaser.Scene {
   // ---------- fresh spawn vs snapshot restore (§6.7) ------------------------
 
   private spawnFresh(): void {
+    TechSystem.reset();
     this.spawnTownHall();
     this.spawnNodes();
     this.spawnWorkers();
@@ -792,6 +831,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applySnapshot(snap: SaveData): void {
+    // 0. Hydrate techs FIRST so the buildings/units we restore below see the
+    //    correct multipliers when their constructors run.
+    TechSystem.hydrate(snap.unlockedTechs as TechId[] | undefined);
+
     // 1. Re-paint mapData with the player's painted tiles (water channels +
     //    dirt paths). Lake water was already marked by markLakeWater().
     for (const t of snap.paintedTiles) {
@@ -908,6 +951,7 @@ export class GameScene extends Phaser.Scene {
       workers: this.workers.map((w) => w.snapshot()),
       nodes: this.nodes.map((n) => n.snapshot()),
       paintedTiles: painted,
+      unlockedTechs: TechSystem.serialize(),
     };
   }
 
