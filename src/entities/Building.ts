@@ -120,6 +120,21 @@ export class Building {
     }
   }
 
+  // Targetable surface (matches Unit's): bandits (and any future hostile
+  // units) can target buildings via Unit's combat code.
+  get isAlive(): boolean {
+    return this.hp > 0;
+  }
+
+  takeDamage(amount: number): void {
+    if (this.hp <= 0) return;
+    this.hp = Math.max(0, this.hp - amount);
+    if (this.hp <= 0) {
+      this.scene.events.emit('building-destroyed', this);
+      this.destroy();
+    }
+  }
+
   // Used at game start for the Town Hall: skip the construction phase so
   // the building is born fully built without firing 'building-constructed'.
   markPrebuilt(): void {

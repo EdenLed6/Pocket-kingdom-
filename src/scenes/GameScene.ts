@@ -159,6 +159,7 @@ export class GameScene extends Phaser.Scene {
         ((this.registry.get('food') as number) ?? 0),
     });
     this.events.on('unit-died', this.onUnitDied, this);
+    this.events.on('building-destroyed', this.onBuildingDestroyed, this);
 
     // §6.5: RaidSystem schedules + spawns enemy waves. Replaces the
     // Phase 4 stationary dummy bandits. Bandits spawn at a random map
@@ -191,7 +192,36 @@ export class GameScene extends Phaser.Scene {
       mapHeightTiles: MAP_HEIGHT_TILES,
       isWalkable: this.isWalkable.bind(this),
       findEnemy: this.findEnemy.bind(this),
+      findEnemyBuilding: this.findEnemyBuilding.bind(this),
     };
+  }
+
+  // Returns the closest constructed enemy building within range, or null.
+  // All buildings in this game are player-side, so for forSide='player'
+  // (player units looking for buildings) we always return null. Bandits
+  // (forSide='enemy') get the nearest standing player building.
+  private findEnemyBuilding(
+    forSide: 'player' | 'enemy',
+    x: number,
+    y: number,
+    withinTiles: number,
+  ): Building | null {
+    if (forSide !== 'enemy') return null;
+    const limit = (withinTiles * TILE_SIZE) ** 2;
+    let best: Building | null = null;
+    let bestDistSq = Infinity;
+    for (const b of this.buildings) {
+      if (!b.isConstructed) continue;
+      const dx = b.worldX - x;
+      const dy = b.worldY - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > limit) continue;
+      if (d2 < bestDistSq) {
+        best = b;
+        bestDistSq = d2;
+      }
+    }
+    return best;
   }
 
   private findEnemy(forSide: 'player' | 'enemy', x: number, y: number, withinTiles: number): Unit | null {
@@ -217,6 +247,23 @@ export class GameScene extends Phaser.Scene {
     const i = this.units.indexOf(u);
     if (i >= 0) this.units.splice(i, 1);
     if (this.selectedSoldier === u) this.selectedSoldier = null;
+  }
+
+  private onBuildingDestroyed(b: Building): void {
+    const i = this.buildings.indexOf(b);
+    if (i >= 0) this.buildings.splice(i, 1);
+    // Free the tiles for re-use (rebuilds, road painting).
+    for (const t of b.footprintTiles()) {
+      this.buildingTiles.delete(this.tileKey(t.tx, t.ty));
+    }
+    if (this.selectedBarracks === b) {
+      this.selectedBarracks = null;
+      this.scene.get('UI').events.emit('close-building-panel');
+    }
+    // Town Hall destroyed = game over (full UI lands in 5g).
+    if (b.def.id === 'town_hall') {
+      console.log('[GAME OVER] Town Hall destroyed.');
+    }
   }
 
   // §4.3: Town Hall trains workers. Cost 30 food + 20 wood, 10s.

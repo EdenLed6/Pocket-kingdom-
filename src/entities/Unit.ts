@@ -5,20 +5,34 @@ import { findPath, type TileXY } from '../utils/pathfinding';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
+// Anything a Unit can target / damage. Both Unit (its own kind) and
+// Building (Phase 5c — bandits attacking the Town Hall) match this
+// shape structurally.
+export interface Targetable {
+  isAlive: boolean;
+  takeDamage(amount: number): void;
+  worldX: number;
+  worldY: number;
+  tileX: number;
+  tileY: number;
+}
+
 export interface UnitDeps {
   mapWidthTiles: number;
   mapHeightTiles: number;
   isWalkable: IsWalkable;
-  // Returns the closest hostile target within visualRange of (x, y), or
-  // null. Phase 4: soldiers find dummy bandits, bandits find player units.
-  // Phase 5 raid AI will reuse this.
+  // Closest hostile UNIT within range, or null.
   findEnemy: (forSide: Side, x: number, y: number, withinTiles: number) => Unit | null;
+  // Closest hostile BUILDING within range, or null. Bandits use this to
+  // pick a Town Hall (or other player building) once they're done with
+  // any units en route.
+  findEnemyBuilding: (forSide: Side, x: number, y: number, withinTiles: number) => Targetable | null;
 }
 
 export type UnitState =
   | { kind: 'idle' }
-  | { kind: 'moving'; goal: TileXY; pursuing?: Unit }
-  | { kind: 'attacking'; target: Unit };
+  | { kind: 'moving'; goal: TileXY; pursuing?: Targetable }
+  | { kind: 'attacking'; target: Targetable };
 
 let nextId = 0;
 
@@ -105,10 +119,10 @@ export class Unit {
     }
   }
 
-  // Player command: walk to a tile, attacking en route. If a unit/dummy is
-  // at the goal, treat it as a target.
-  attackMove(goal: TileXY, target?: Unit): void {
-    if (target && target.isAlive && target.side !== this.side) {
+  // Player command: walk to a tile, attacking en route. Optionally pursue
+  // a specific target (unit or building).
+  attackMove(goal: TileXY, target?: Targetable): void {
+    if (target && target.isAlive) {
       this.state = { kind: 'moving', goal: { tx: target.tileX, ty: target.tileY }, pursuing: target };
     } else {
       this.state = { kind: 'moving', goal };
@@ -147,14 +161,20 @@ export class Unit {
   }
 
   private acquireOpportuneTarget(): void {
-    // Guard / attack-move both auto-attack visible enemies in range.
+    // Prefer hostile units (closer threat). If none in range, look for an
+    // enemy building (bandits attacking the Town Hall use this path).
     const range = this.def.rangeTiles;
-    const enemy = this.deps.findEnemy(this.side, this.sprite.x, this.sprite.y, Math.max(range, 5));
-    if (!enemy) return;
-    if (this.tileDistanceTo(enemy) <= range) {
-      this.state = { kind: 'attacking', target: enemy };
+    const search = Math.max(range, 5);
+    let target: Targetable | null =
+      this.deps.findEnemy(this.side, this.sprite.x, this.sprite.y, search);
+    if (!target) {
+      target = this.deps.findEnemyBuilding(this.side, this.sprite.x, this.sprite.y, search);
+    }
+    if (!target) return;
+    if (this.tileDistanceTo(target) <= range) {
+      this.state = { kind: 'attacking', target };
     } else if (this.stance === 'attack-move') {
-      this.state = { kind: 'moving', goal: { tx: enemy.tileX, ty: enemy.tileY }, pursuing: enemy };
+      this.state = { kind: 'moving', goal: { tx: target.tileX, ty: target.tileY }, pursuing: target };
       this.computePath(this.state.goal);
     }
   }
@@ -225,7 +245,7 @@ export class Unit {
     this.cooldownSec = this.def.attackCooldownSec;
   }
 
-  private applyHit(target: Unit): void {
+  private applyHit(target: Targetable): void {
     target.takeDamage(this.def.damage);
     // Visualise attack as a 80ms line from attacker to target.
     this.flashTimer = 0.08;
@@ -263,7 +283,7 @@ export class Unit {
     this.hpBar.fillRect(x, y, Math.max(0, Math.floor(W * ratio)), H);
   }
 
-  private tileDistanceTo(other: Unit): number {
+  private tileDistanceTo(other: Targetable): number {
     return Math.max(
       Math.abs(this.tileX - other.tileX),
       Math.abs(this.tileY - other.tileY),
