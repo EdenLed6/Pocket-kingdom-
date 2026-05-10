@@ -12,8 +12,9 @@ dist
 dist-ssr
 *.local
 
-# Capacitor (Phase 7)
-/android
+# Capacitor: native projects ARE committed (standard Capacitor workflow);
+# their own .gitignore files exclude build outputs (.gradle/, build/, *.apk).
+# Only ignore iOS until we add it.
 /ios
 
 # Editor directories and files
