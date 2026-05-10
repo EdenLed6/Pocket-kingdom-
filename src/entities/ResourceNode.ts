@@ -80,6 +80,10 @@ export class ResourceNode {
   private treeVariant: number;
   private sprite: Phaser.GameObjects.Sprite;
   private berries: Phaser.GameObjects.Sprite | null = null;
+  // Yellow ring drawn under the sprite when this node is the active
+  // gather target of a worker. Eden's UX feedback: in dense forests
+  // it's hard to see which tree the worker is actually heading to.
+  private targetRing: Phaser.GameObjects.Arc | null = null;
   private scene: Phaser.Scene;
   private remaining: number;
   // Visible position is whatever the spawner asked for — may be sub-tile,
@@ -135,8 +139,21 @@ export class ResourceNode {
       .sprite(this.visX, this.visY, initialKey)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
       .setScale(baseScale)
-      .setDepth(this.visY)
-      .setInteractive({ useHandCursor: true });
+      .setDepth(this.visY);
+    if (kind === 'tree') {
+      // Trees are 192×256 with a wide canopy. In dense forests the
+      // canopies overlap, so a tap on tree A's canopy could land on
+      // tree B's deeper sprite first. Restrict the hit area to the
+      // trunk + base (lower middle of the source frame) so the player
+      // hits the tree they actually see at the tap location.
+      this.sprite.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(60, 160, 72, 96),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
+    } else {
+      this.sprite.setInteractive({ useHandCursor: true });
+    }
     // Random horizontal flip for trees + rocks — doubles the visual
     // silhouettes for free, breaks the "all trees face the same way"
     // alignment hint that helped read forests as rows.
@@ -164,6 +181,31 @@ export class ResourceNode {
     return this.cfg.totalYield;
   }
 
+  // Yellow ring under the sprite, marking this node as the active
+  // worker gather target. Sized roughly to one tile so it's visible
+  // through the sprite's canopy in dense forests.
+  setTargeted(on: boolean): void {
+    if (on) {
+      if (this.targetRing) return;
+      const ring = this.scene.add
+        .circle(this.visX, this.tileY * TILE_SIZE + TILE_SIZE / 2 + TILE_SIZE * 0.4, TILE_SIZE * 0.45)
+        .setStrokeStyle(3, 0xffd040, 1)
+        .setDepth(this.visY - 1);
+      this.scene.tweens.add({
+        targets: ring,
+        scale: { from: 0.7, to: 1 },
+        alpha: { from: 0.4, to: 1 },
+        duration: 200,
+        ease: 'Quad.easeOut',
+      });
+      this.targetRing = ring;
+    } else {
+      if (!this.targetRing) return;
+      this.targetRing.destroy();
+      this.targetRing = null;
+    }
+  }
+
   harvest(): number {
     if (this.remaining <= 0) return 0;
     const got = Math.min(this.cfg.yieldPerChop, this.remaining);
@@ -175,6 +217,10 @@ export class ResourceNode {
 
   private deplete(): void {
     this.sprite.disableInteractive();
+    if (this.targetRing) {
+      this.targetRing.destroy();
+      this.targetRing = null;
+    }
     // Trees actually FALL: tilt rotation + drop slightly before swapping
     // to a stump. Eden's request: "the tree should fall when chopped".
     if (this.kind === 'tree') {
@@ -248,5 +294,6 @@ export class ResourceNode {
   destroy(): void {
     this.sprite.destroy();
     if (this.berries) this.berries.destroy();
+    if (this.targetRing) this.targetRing.destroy();
   }
 }

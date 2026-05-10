@@ -127,11 +127,11 @@ export class Worker {
 
   assignNode(node: ResourceNode): void {
     this.releaseBuildingSlot();
-    this.targetNode = node;
+    this.setTargetNode(node);
     this.autoMode = 'gather';
     this.autoResource = node.resource;
     if (!node.isAvailable) {
-      this.targetNode = null;
+      this.setTargetNode(null);
       this.chainAfterAssignment();
       return;
     }
@@ -148,9 +148,18 @@ export class Worker {
     this.startMoveToNode(node);
   }
 
+  // Centralised target-node mutation so the on-screen yellow ring stays
+  // in sync. Clears the previous target's ring, marks the new one.
+  private setTargetNode(node: ResourceNode | null): void {
+    if (this.targetNode === node) return;
+    if (this.targetNode) this.targetNode.setTargeted(false);
+    this.targetNode = node;
+    if (node) node.setTargeted(true);
+  }
+
   assignSite(site: Building): void {
     this.releaseBuildingSlot();
-    this.targetNode = null;
+    this.setTargetNode(null);
     this.autoMode = 'build';
     this.autoResource = null;
     if (site.isConstructed) {
@@ -175,7 +184,7 @@ export class Worker {
   // tending them. Worker walks to the farm and stays there until reassigned.
   assignFarm(farm: Building): void {
     this.releaseBuildingSlot();
-    this.targetNode = null;
+    this.setTargetNode(null);
     this.autoMode = null;
     this.autoResource = null;
     if (this.inventoryAmount > 0) {
@@ -277,7 +286,7 @@ export class Worker {
         this.startMoveToNode(this.targetNode);
         return;
       }
-      this.targetNode = null;
+      this.setTargetNode(null);
       this.autoMode = null;
       this.autoResource = null;
       this.state = { kind: 'idle' };
@@ -579,6 +588,7 @@ export class Worker {
   }
 
   destroy(): void {
+    this.setTargetNode(null);
     this.sprite.destroy();
     this.ring.destroy();
   }
