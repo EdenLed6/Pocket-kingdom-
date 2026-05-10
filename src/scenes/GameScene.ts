@@ -528,16 +528,20 @@ export class GameScene extends Phaser.Scene {
     radius: number,
     reserved: Set<number>,
   ): void {
-    // Aim for high density (≈ 2.2 trees per tile near the centre).
-    const target = Math.floor(radius * radius * Math.PI * 2.2);
+    // Heavy density (≈ 4 trees per tile) so the edges don't read as sparse
+    // alignments. Uniform-area distribution (sqrt) with a small radius
+    // jitter per tree makes the silhouette ellipsoidal but not a circle.
+    const target = Math.floor(radius * radius * Math.PI * 4.0);
     let placed = 0;
     let attempts = 0;
     while (placed < target && attempts < target * 4) {
       attempts++;
-      // sqrt(r) gives uniform area distribution; bias slightly inward by
-      // raising to 0.7 so the centre packs denser than the edge.
-      const rNorm = Math.pow(rng.frac(), 0.7);
-      const r = rNorm * radius;
+      // Mostly uniform-in-disk (sqrt), with a tiny center bias so the
+      // middle is a touch denser. Plus per-attempt radius jitter to break
+      // the circular boundary.
+      const rNorm = Math.pow(rng.frac(), 0.6);
+      const radiusJitter = 0.85 + rng.frac() * 0.3;
+      const r = rNorm * radius * radiusJitter;
       const a = rng.frac() * Math.PI * 2;
       const wx = (cx + Math.cos(a) * r) * TILE_SIZE + TILE_SIZE / 2;
       const wy = (cy + Math.sin(a) * r) * TILE_SIZE + TILE_SIZE / 2;

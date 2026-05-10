@@ -135,6 +135,13 @@ export class ResourceNode {
       .setScale(baseScale)
       .setDepth(this.visY)
       .setInteractive({ useHandCursor: true });
+    // Random horizontal flip for trees + rocks — doubles the visual
+    // silhouettes for free, breaks the "all trees face the same way"
+    // alignment hint that helped read forests as rows.
+    if (kind === 'tree' || kind === 'rock') {
+      const flipHash = ((Math.floor(worldX) * 12345) ^ (Math.floor(worldY) * 67890)) >>> 0;
+      if ((flipHash & 1) === 1) this.sprite.setFlipX(true);
+    }
     this.sprite.setData('kind', 'node').setData('node', this);
 
     // Bushes get a small red-berry overlay so they read as fruit bushes.
