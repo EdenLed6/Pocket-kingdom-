@@ -528,10 +528,11 @@ export class GameScene extends Phaser.Scene {
     radius: number,
     reserved: Set<number>,
   ): void {
-    // Heavy density (≈ 4 trees per tile) so the edges don't read as sparse
-    // alignments. Uniform-area distribution (sqrt) with a small radius
-    // jitter per tree makes the silhouette ellipsoidal but not a circle.
-    const target = Math.floor(radius * radius * Math.PI * 4.0);
+    // Moderate density (≈ 2.5 trees per tile). 4.0 was too dense — Eden
+    // said the forests felt overcrowded. The other variety knobs (4 tree
+    // variants, ±0.07 scale, random horizontal flip, sub-tile positions)
+    // hide the row pattern without needing absurd density.
+    const target = Math.floor(radius * radius * Math.PI * 2.5);
     let placed = 0;
     let attempts = 0;
     while (placed < target && attempts < target * 4) {

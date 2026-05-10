@@ -101,9 +101,9 @@ export class ResourceNode {
 
     // Trees: roll a 1..4 variant for AoM-style forest variety.
     this.treeVariant = kind === 'tree' ? Phaser.Math.Between(1, 4) : 1;
-    // Rocks: roll a 1..5 variant (3 boulders + 2 small stones) so a
-    // quarry cluster has mixed sizes / silhouettes.
-    const rockVariant = kind === 'rock' ? Phaser.Math.Between(1, 5) : 1;
+    // Rocks: 1..3 grey boulder variants (no gold-stones — they read as
+    // gold ore not stone, per Eden's playtest).
+    const rockVariant = kind === 'rock' ? Phaser.Math.Between(1, 3) : 1;
     const initialKey =
       kind === 'tree'
         ? `tree_v${this.treeVariant}`
@@ -145,15 +145,9 @@ export class ResourceNode {
     this.sprite.setData('kind', 'node').setData('node', this);
 
     // Bushes get a small red-berry overlay so they read as fruit bushes.
-    if (kind === 'bush') {
-      // Bigger overlay (60x40) sits across the upper 2/3 of the bush so
-      // the berries are clearly readable at the 70 px display size.
-      this.berries = scene.add
-        .sprite(this.visX, this.visY - 18, 'bush_berries')
-        .setOrigin(0.5, 0.5)
-        .setScale(0.7)
-        .setDepth(this.visY + 0.5);
-    }
+    // Bushes used to get a procedural bush_berries overlay; Eden didn't
+    // like the look so it's gone. Plain Tiny Swords bush stands alone
+    // until we wire a proper berry sprite from another source.
   }
 
   get isAvailable(): boolean {
