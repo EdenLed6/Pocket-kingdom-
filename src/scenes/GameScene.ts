@@ -299,9 +299,11 @@ export class GameScene extends Phaser.Scene {
       this.selectedBarracks = null;
       this.scene.get('UI').events.emit('close-building-panel');
     }
-    // Town Hall destroyed = game over (full UI lands in 5g).
+    // Town Hall destroyed = game over.
     if (b.def.id === 'town_hall') {
       console.log('[GAME OVER] Town Hall destroyed.');
+      this.scene.get('UI').events.emit('game-over');
+      this.scene.pause();
     }
   }
 

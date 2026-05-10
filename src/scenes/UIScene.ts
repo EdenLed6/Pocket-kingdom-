@@ -100,6 +100,7 @@ export class UIScene extends Phaser.Scene {
 
     this.events.on('raid-warning', this.showRaidWarning, this);
     this.events.on('raid-warning-end', this.hideRaidWarning, this);
+    this.events.on('game-over', this.showGameOver, this);
     this.events.on('open-building-panel', this.openBuildingPanel, this);
     this.events.on('close-building-panel', this.closeBuildingPanel, this);
     this.events.on('open-worker-panel', this.openWorkerPanel, this);
@@ -191,6 +192,69 @@ export class UIScene extends Phaser.Scene {
   }
 
   // ---------- placement banner ---------------------------------------------
+
+  // ---------- game over overlay ----------------------------------------
+
+  private gameOverPanel: Phaser.GameObjects.Container | null = null;
+
+  private showGameOver(): void {
+    if (this.gameOverPanel) return;
+    // Drop any other transient UI so the overlay is clean.
+    this.hideRaidWarning();
+    this.hidePlacementBanner();
+    this.dismissDrawer();
+
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const c = this.add.container(0, 0).setDepth(2000).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, h, 0x000000, 0.85).setOrigin(0, 0));
+    c.add(
+      this.add
+        .text(w / 2, h * 0.4, 'Your village has fallen', {
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: '22px',
+          color: '#ff8080',
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
+
+    const btnW = 180;
+    const btnH = 56;
+    const btnX = w / 2 - btnW / 2;
+    const btnY = h * 0.55;
+    const btn = this.add
+      .rectangle(btnX, btnY, btnW, btnH, 0x3a4a6a, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0x80c0ff)
+      .setInteractive({ useHandCursor: true });
+    const label = this.add
+      .text(btnX + btnW / 2, btnY + btnH / 2, 'Restart', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '18px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    btn.on(Phaser.Input.Events.POINTER_UP, () => this.restartGame());
+    c.add(btn);
+    c.add(label);
+
+    this.gameOverPanel = c;
+  }
+
+  private restartGame(): void {
+    // Tear down the overlay first, then bounce both scenes. GameScene
+    // was paused by the game-over emit; UIScene needs to clear its own
+    // state so a fresh game starts clean.
+    if (this.gameOverPanel) {
+      this.gameOverPanel.destroy();
+      this.gameOverPanel = null;
+    }
+    const game = this.scene.get('Game');
+    if (game.scene.isPaused()) game.scene.resume();
+    game.scene.restart();
+    this.scene.restart();
+  }
 
   // ---------- raid warning (10s pre-spawn banner + arrow) ----------------
 
