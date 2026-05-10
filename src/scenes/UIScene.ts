@@ -60,7 +60,10 @@ export class UIScene extends Phaser.Scene {
       { key: 'pop', capKey: 'popCap', label: 'P' },
     ];
 
-    const colWidth = Math.floor(w / defs.length);
+    // Reserve 36 px on the right for the pause button so the resource
+    // text doesn't run under it.
+    const usable = w - 36;
+    const colWidth = Math.floor(usable / defs.length);
     defs.forEach((d, i) => {
       const text = this.add
         .text(8 + colWidth * i, 8, '', HUD_FONT)
@@ -70,6 +73,15 @@ export class UIScene extends Phaser.Scene {
       this.lines.push(line);
       this.refreshLine(line);
     });
+
+    // Pause button — hamburger glyph at top-right of the HUD bar.
+    const pauseBtn = this.add
+      .text(w - 18, 18, '☰', { ...HUD_FONT, fontSize: '20px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setDepth(1010)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    pauseBtn.on(Phaser.Input.Events.POINTER_UP, () => this.showPauseMenu());
 
     this.registry.events.on('changedata', this.onRegistryChange, this);
 
@@ -192,6 +204,182 @@ export class UIScene extends Phaser.Scene {
   }
 
   // ---------- placement banner ---------------------------------------------
+
+  // ---------- pause menu (§7.6) -----------------------------------------
+
+  private pausePanel: Phaser.GameObjects.Container | null = null;
+  private settingsPanel: Phaser.GameObjects.Container | null = null;
+
+  private showPauseMenu(): void {
+    if (this.pausePanel || this.gameOverPanel) return;
+    // Drop transient UI so the overlay reads as the only thing on screen.
+    this.dismissDrawer();
+    this.hidePlacementBanner();
+    this.closeWorkerPanel();
+    this.closeBuildingPanel();
+
+    const game = this.scene.get('Game');
+    if (!game.scene.isPaused()) game.scene.pause();
+
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const c = this.add.container(0, 0).setDepth(1900).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, h, 0x000000, 0.78).setOrigin(0, 0));
+    c.add(
+      this.add
+        .text(w / 2, h * 0.22, 'Paused', {
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: '24px',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5),
+    );
+
+    const items: { label: string; disabled?: boolean; onTap: () => void }[] = [
+      { label: 'Resume', onTap: () => this.hidePauseMenu() },
+      { label: 'Save (6b)', disabled: true, onTap: () => {} },
+      { label: 'Load (6b)', disabled: true, onTap: () => {} },
+      { label: 'Settings', onTap: () => this.showSettings() },
+      { label: 'Quit', onTap: () => window.location.reload() },
+    ];
+
+    const btnW = 220;
+    const btnH = 48;
+    const startY = h * 0.32;
+    items.forEach((item, i) => {
+      const x = w / 2 - btnW / 2;
+      const y = startY + i * (btnH + 10);
+      const fill = item.disabled ? 0x222230 : 0x3a4a6a;
+      const stroke = item.disabled ? 0x444454 : 0x80c0ff;
+      const rect = this.add
+        .rectangle(x, y, btnW, btnH, fill, 1)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, stroke);
+      const label = this.add
+        .text(x + btnW / 2, y + btnH / 2, item.label, {
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: '16px',
+          color: item.disabled ? '#777777' : '#ffffff',
+        })
+        .setOrigin(0.5);
+      if (!item.disabled) {
+        rect.setInteractive({ useHandCursor: true });
+        rect.on(Phaser.Input.Events.POINTER_UP, item.onTap);
+      }
+      c.add(rect);
+      c.add(label);
+    });
+
+    this.pausePanel = c;
+  }
+
+  private hidePauseMenu(): void {
+    if (this.settingsPanel) this.hideSettings();
+    if (!this.pausePanel) return;
+    this.pausePanel.destroy();
+    this.pausePanel = null;
+    const game = this.scene.get('Game');
+    if (game.scene.isPaused() && !this.gameOverPanel) game.scene.resume();
+  }
+
+  private showSettings(): void {
+    if (this.settingsPanel) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const c = this.add.container(0, 0).setDepth(1950).setScrollFactor(0);
+    c.add(this.add.rectangle(0, 0, w, h, 0x000000, 0.85).setOrigin(0, 0));
+    c.add(
+      this.add
+        .text(w / 2, h * 0.18, 'Settings', {
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: '22px',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5),
+    );
+    // Audio sliders are placeholders until 6c brings real audio in.
+    const audioLabels = ['Master volume', 'Music volume', 'SFX volume'];
+    audioLabels.forEach((lbl, i) => {
+      const y = h * 0.28 + i * 56;
+      c.add(
+        this.add
+          .text(w / 2 - 100, y, lbl, {
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '14px',
+            color: '#888888',
+          })
+          .setOrigin(0, 0.5),
+      );
+      const trackX = w / 2 - 100;
+      c.add(
+        this.add
+          .rectangle(trackX, y + 22, 200, 4, 0x444454, 1)
+          .setOrigin(0, 0.5),
+      );
+      c.add(
+        this.add
+          .circle(trackX + 200, y + 22, 8, 0x666677, 1)
+          .setStrokeStyle(1, 0x888888),
+      );
+      c.add(
+        this.add
+          .text(w / 2 - 100, y + 38, '(disabled until 6c audio)', {
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '11px',
+            color: '#666666',
+          })
+          .setOrigin(0, 0.5),
+      );
+    });
+
+    // "Reset Progress" — wired in 6b when localStorage save is in.
+    const resetY = h * 0.62;
+    const rrW = 200;
+    const rrH = 40;
+    const rrX = w / 2 - rrW / 2;
+    const reset = this.add
+      .rectangle(rrX, resetY, rrW, rrH, 0x222230, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0x444454);
+    const resetLabel = this.add
+      .text(rrX + rrW / 2, resetY + rrH / 2, 'Reset Progress (6b)', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '14px',
+        color: '#777777',
+      })
+      .setOrigin(0.5);
+    c.add(reset);
+    c.add(resetLabel);
+
+    // Back button.
+    const backY = h * 0.78;
+    const bbW = 160;
+    const bbH = 44;
+    const bbX = w / 2 - bbW / 2;
+    const back = this.add
+      .rectangle(bbX, backY, bbW, bbH, 0x3a4a6a, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0x80c0ff)
+      .setInteractive({ useHandCursor: true });
+    const backLabel = this.add
+      .text(bbX + bbW / 2, backY + bbH / 2, 'Back', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '15px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5);
+    back.on(Phaser.Input.Events.POINTER_UP, () => this.hideSettings());
+    c.add(back);
+    c.add(backLabel);
+
+    this.settingsPanel = c;
+  }
+
+  private hideSettings(): void {
+    if (!this.settingsPanel) return;
+    this.settingsPanel.destroy();
+    this.settingsPanel = null;
+  }
 
   // ---------- game over overlay ----------------------------------------
 
