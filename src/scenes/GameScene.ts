@@ -344,69 +344,127 @@ export class GameScene extends Phaser.Scene {
     return inside;
   }
 
-  // One unified water renderer: layered overlapping circles per WATER
-  // tile in mapData. Both lakes (whole regions) and dug channels (single
-  // tiles or thin lines) use this same code path so they look identical.
-  // Called at boot and after each paint-mode water toggle.
+  // Render water in two paths so neither has the per-tile pattern Eden
+  // saw before:
+  //   Lakes (predefined LAKES) → smooth polygon (28-vertex jittered
+  //                              ellipse). One filled shape, no scallops.
+  //   Painted channels (TILE.WATER not inside any lake polygon) →
+  //                              overlapping circle per tile (still gives
+  //                              decent results for thin dug channels).
+  // No per-tile sparkles — those formed a diamond grid pattern inside
+  // the lake. Subtle organic wave hints replace them.
   private redrawWater(): void {
     const g = this.waterGraphics;
     g.clear();
-    const tiles: { tx: number; ty: number; cx: number; cy: number }[] = [];
-    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
-      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
-        if (this.mapData[ty][tx] !== TILE.WATER) continue;
-        tiles.push({
-          tx,
-          ty,
-          cx: (tx + 0.5) * TILE_SIZE,
-          cy: (ty + 0.5) * TILE_SIZE,
-        });
-      }
+    if (this.lakePolygons.length === 0 && this.channelTiles().length === 0) return;
+
+    // ---- Lakes (smooth polygons) ----
+    for (const polygon of this.lakePolygons) {
+      // Outer rim (darker) by drawing the polygon at full size.
+      g.fillStyle(0x2a73a8, 1);
+      g.fillPoints(polygon, true);
+      // Body — slightly inset polygon (computed by pulling each vertex
+      // toward the polygon centroid).
+      const inset = this.insetPolygon(polygon, 8);
+      g.fillStyle(0x4a93cc, 1);
+      g.fillPoints(inset, true);
+      // Highlight — even more inset.
+      const inner = this.insetPolygon(polygon, 18);
+      g.fillStyle(0x65a8d8, 1);
+      g.fillPoints(inner, true);
+      // Light wave streaks scattered organically inside (not tile-aligned).
+      this.drawWaveStreaks(polygon);
     }
-    if (tiles.length === 0) return;
-    // Pass 1 — dark outer rim. Big enough that adjacent water circles
-    // fully cover each other's inner area; the rim only shows up at
-    // boundaries with non-water tiles, giving a natural deep-water edge.
-    g.fillStyle(0x2a73a8, 1);
-    for (const t of tiles) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.86);
-    // Pass 2 — main water body (medium blue).
-    g.fillStyle(0x4a93cc, 1);
-    for (const t of tiles) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.74);
-    // Pass 3 — soft highlight to give depth.
-    g.fillStyle(0x65a8d8, 1);
-    for (const t of tiles) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.58);
-    // Pass 4 — interior wave + sparkle hints. Skip edge tiles so the
-    // rim stays clean; deterministic per-tile so it stays still.
-    g.fillStyle(0xb6dcef, 0.85);
-    for (const t of tiles) {
-      if (this.isWaterEdge(t.tx, t.ty)) continue;
-      const h = ((t.tx * 73856093) ^ (t.ty * 19349663)) >>> 0;
-      const ox = ((h % 1000) / 1000 - 0.5) * TILE_SIZE * 0.6;
-      const oy = ((((h >> 7) % 1000) / 1000) - 0.5) * TILE_SIZE * 0.6;
-      g.fillRect(t.cx + ox - 5, t.cy + oy, 10, 1);
-    }
-    g.fillStyle(0xeaf5fc, 0.9);
-    for (const t of tiles) {
-      if (this.isWaterEdge(t.tx, t.ty)) continue;
-      const h = ((t.tx * 50331653) ^ (t.ty * 12582917)) >>> 0;
-      const ox = ((h % 1000) / 1000 - 0.5) * TILE_SIZE * 0.5;
-      const oy = ((((h >> 7) % 1000) / 1000) - 0.5) * TILE_SIZE * 0.5;
-      g.fillRect(t.cx + ox, t.cy + oy, 2, 2);
+
+    // ---- Painted channels ----
+    const channels = this.channelTiles();
+    if (channels.length > 0) {
+      g.fillStyle(0x2a73a8, 1);
+      for (const t of channels) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.78);
+      g.fillStyle(0x4a93cc, 1);
+      for (const t of channels) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.62);
+      g.fillStyle(0x65a8d8, 1);
+      for (const t of channels) g.fillCircle(t.cx, t.cy, TILE_SIZE * 0.46);
     }
   }
 
-  private isWaterEdge(tx: number, ty: number): boolean {
-    const ds: [number, number][] = [
-      [tx - 1, ty],
-      [tx + 1, ty],
-      [tx, ty - 1],
-      [tx, ty + 1],
-    ];
-    for (const [nx, ny] of ds) {
-      if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) return true;
-      if (this.mapData[ny][nx] !== TILE.WATER) return true;
+  // Tiles that are WATER in mapData but NOT inside any lake polygon.
+  // Those are the player-painted channels.
+  private channelTiles(): { cx: number; cy: number }[] {
+    const out: { cx: number; cy: number }[] = [];
+    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
+      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
+        if (this.mapData[ty][tx] !== TILE.WATER) continue;
+        const cx = (tx + 0.5) * TILE_SIZE;
+        const cy = (ty + 0.5) * TILE_SIZE;
+        let inLake = false;
+        for (const poly of this.lakePolygons) {
+          if (this.pointInPolygon(cx, cy, poly)) {
+            inLake = true;
+            break;
+          }
+        }
+        if (!inLake) out.push({ cx, cy });
+      }
     }
-    return false;
+    return out;
+  }
+
+  private insetPolygon(polygon: Phaser.Math.Vector2[], px: number): Phaser.Math.Vector2[] {
+    // Centroid-based inset: pull each vertex toward the polygon centre by
+    // `px` pixels. Cheap and good enough for our ~ellipse-shaped lakes.
+    let cx = 0, cy = 0;
+    for (const p of polygon) {
+      cx += p.x;
+      cy += p.y;
+    }
+    cx /= polygon.length;
+    cy /= polygon.length;
+    return polygon.map((p) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const k = Math.max(0, len - px) / len;
+      return new Phaser.Math.Vector2(cx + dx * k, cy + dy * k);
+    });
+  }
+
+  // Scatter a few small horizontal wavelets inside the lake polygon. Uses
+  // a seeded RNG so the lake looks the same every load. Sparse — no grid.
+  private drawWaveStreaks(polygon: Phaser.Math.Vector2[]): void {
+    const g = this.waterGraphics;
+    let cx = 0, cy = 0;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of polygon) {
+      cx += p.x;
+      cy += p.y;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    cx /= polygon.length;
+    cy /= polygon.length;
+    let seed = Math.floor(cx * 13 + cy * 31);
+    const next = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const tries = 60;
+    let placed = 0;
+    g.fillStyle(0xc0e0f0, 0.7);
+    for (let i = 0; i < tries && placed < 18; i++) {
+      const px = minX + next() * (maxX - minX);
+      const py = minY + next() * (maxY - minY);
+      // Only inside the polygon and not too close to the rim.
+      if (!this.pointInPolygon(px, py, polygon)) continue;
+      // Must be at least 16 px from polygon edge (rough check via inset).
+      const inset = this.insetPolygon(polygon, 14);
+      if (!this.pointInPolygon(px, py, inset)) continue;
+      const w = 6 + next() * 10;
+      g.fillRect(px - w / 2, py, w, 1);
+      placed++;
+    }
   }
 
   // AoM-style biome placement: dense forests + rock clusters + berry
