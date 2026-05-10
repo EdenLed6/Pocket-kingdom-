@@ -139,21 +139,14 @@ export class ResourceNode {
       .sprite(this.visX, this.visY, initialKey)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
       .setScale(baseScale)
-      .setDepth(this.visY);
-    if (kind === 'tree') {
-      // Trees are 192×256 with a wide canopy. In dense forests the
-      // canopies overlap, so a tap on tree A's canopy could land on
-      // tree B's deeper sprite first. Restrict the hit area to the
-      // trunk + base (lower middle of the source frame) so the player
-      // hits the tree they actually see at the tap location.
-      this.sprite.setInteractive({
-        hitArea: new Phaser.Geom.Rectangle(60, 160, 72, 96),
-        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
-        useHandCursor: true,
-      });
-    } else {
-      this.sprite.setInteractive({ useHandCursor: true });
-    }
+      .setDepth(this.visY)
+      .setInteractive({ useHandCursor: true });
+    // Default hit area = full sprite. The earlier "trunk-only" hitbox
+    // was 72×96 in source pixels, which at the tree's 0.45 scale was
+    // only ~32×43 display pixels — almost impossible to tap on phone.
+    // The yellow target ring (setTargeted) gives Eden the visual
+    // feedback for "which tree got picked" in dense forests, so we
+    // don't need a tight hitbox to disambiguate.
     // Random horizontal flip for trees + rocks — doubles the visual
     // silhouettes for free, breaks the "all trees face the same way"
     // alignment hint that helped read forests as rows.
