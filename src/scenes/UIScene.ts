@@ -1014,21 +1014,27 @@ export class UIScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
     const c = this.add.container(0, 0).setDepth(2000).setScrollFactor(0);
-    c.add(
-      this.add
-        .rectangle(0, 0, w, h, 0x000000, 0.55)
-        .setOrigin(0, 0)
-        .setInteractive(),
-    );
+    // Background scrim — interactive so taps outside the panel don't fall
+    // through to the world, AND closes the panel on tap so it can never
+    // get stuck on screen blocking subsequent input.
+    const scrim = this.add
+      .rectangle(0, 0, w, h, 0x000000, 0.55)
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: false });
+    scrim.on(Phaser.Input.Events.POINTER_UP, () => this.closeResearchPanel());
+    c.add(scrim);
     const panelW = Math.min(w - 32, 480);
     const panelH = Math.min(h - 80, 600);
     const px = (w - panelW) / 2;
     const py = (h - panelH) / 2;
+    // Panel body — interactive (no-op) so taps inside the panel don't
+    // bubble down to the scrim and accidentally close the panel.
     c.add(
       this.add
         .rectangle(px, py, panelW, panelH, 0x1a1a24, 0.98)
         .setOrigin(0, 0)
-        .setStrokeStyle(2, 0xffd060),
+        .setStrokeStyle(2, 0xffd060)
+        .setInteractive({ useHandCursor: false }),
     );
     c.add(
       this.add
