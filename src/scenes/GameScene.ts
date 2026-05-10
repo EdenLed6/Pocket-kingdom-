@@ -1234,7 +1234,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (this.isOverUI(pointer)) return;
+    if (this.isInPlacementBanner(pointer)) return;
     if (this.paintMode !== 'off') {
       if (this.painting) this.paintTileAtPointer(pointer);
       return;
@@ -1379,19 +1379,18 @@ export class GameScene extends Phaser.Scene {
     this.scene.get('UI').events.emit('paint-mode-changed', this.paintMode);
   }
 
-  // True when the pointer is over an interactive object in the UIScene
-  // (HUD buttons, placement banner, panels, etc). Used to prevent
-  // scene-level pointer handlers from also acting on the world tile
-  // beneath the UI — otherwise tapping the ✓ Place button would also
-  // reposition the ghost to the top-of-screen banner location.
-  private isOverUI(pointer: Phaser.Input.Pointer): boolean {
-    const ui = this.scene.get('UI') as Phaser.Scene | undefined;
-    if (!ui || !ui.input) return false;
-    return ui.input.hitTestPointer(pointer).length > 0;
+  // The placement banner sits at screen-y 40..76. When placement is
+  // active, taps inside that strip belong to the banner's ✓ / ×
+  // buttons — don't let GameScene also act on them (otherwise the
+  // ghost would jump to top-of-screen and commit there). We deliberately
+  // limit this guard to placement mode so normal taps on HUD buttons
+  // (pause, build, road) still work as before.
+  private isInPlacementBanner(pointer: Phaser.Input.Pointer): boolean {
+    return !!this.placement && pointer.y >= 36 && pointer.y <= 80;
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    if (this.isOverUI(pointer)) return;
+    if (this.isInPlacementBanner(pointer)) return;
     if (this.paintMode !== 'off') {
       if (this.touch.wasGesture) return;
       this.painting = true;
@@ -1446,7 +1445,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onPointerUp(pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]): void {
-    if (this.isOverUI(pointer)) return;
+    if (this.isInPlacementBanner(pointer)) return;
     if (this.paintMode !== 'off') {
       this.painting = false;
       return;
