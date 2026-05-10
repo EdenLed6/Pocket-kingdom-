@@ -211,24 +211,45 @@ export class PreloadScene extends Phaser.Scene {
     this.makeBushBerries();
   }
 
-  // Tiny Swords bushes are berry-less greens; we overlay this small image
-  // on top of each bush ResourceNode so the player can read them as
-  // berry / fruit bushes per Eden's request.
+  // Tiny Swords bushes are berry-less greens; we paint a chunky berry
+  // overlay (much more prominent than before — Eden's previous version
+  // was nearly invisible at 70 px scale). 14 berries with a clear
+  // pixel-art look: dark red rim, bright body, white highlight.
   private makeBushBerries(): void {
-    const W = 36;
-    const H = 24;
+    const W = 60;
+    const H = 40;
     const g = this.make.graphics({ x: 0, y: 0 }, false);
-    // 6 random red dots clumped in the upper half.
-    const points: [number, number][] = [
-      [10, 8], [16, 5], [22, 9], [12, 13], [20, 14], [26, 12],
+
+    // Tiny green-leaf accents behind the berries so the patch reads as
+    // foliage with fruit, not just floating dots.
+    g.fillStyle(0x3a8a40, 1);
+    const leafs: [number, number][] = [
+      [10, 6], [22, 4], [34, 5], [46, 7],
+      [14, 14], [28, 11], [40, 13], [52, 15],
+      [18, 22], [32, 20], [44, 22],
     ];
-    for (const [x, y] of points) {
+    for (const [x, y] of leafs) g.fillRect(x, y, 3, 2);
+
+    // Berry positions clumped in the upper two-thirds, varied for
+    // organic look. Each berry rendered as a 5x5 pixel cluster.
+    const berries: [number, number][] = [
+      [8, 8], [16, 4], [24, 9], [32, 6], [40, 10], [48, 8],
+      [12, 16], [22, 18], [30, 14], [38, 18], [46, 16],
+      [18, 24], [28, 22], [40, 24],
+    ];
+    for (const [x, y] of berries) {
+      // Dark rim (5x5 outer).
       g.fillStyle(0x4a0a0a, 1);
-      g.fillRect(x - 1, y - 1, 4, 4); // dark outline
+      g.fillRect(x - 2, y - 2, 5, 5);
+      // Bright red body (3x3 inner).
       g.fillStyle(0xd02838, 1);
-      g.fillRect(x, y, 2, 2); // berry body
-      g.fillStyle(0xff6878, 1);
-      g.fillRect(x, y, 1, 1); // highlight
+      g.fillRect(x - 1, y - 1, 3, 3);
+      // Brighter pink core (1x1 centre).
+      g.fillStyle(0xff7080, 1);
+      g.fillRect(x, y, 1, 1);
+      // Tiny white highlight (1x1, top-left).
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(x - 1, y - 1, 1, 1);
     }
     g.generateTexture('bush_berries', W, H);
     g.destroy();

@@ -139,10 +139,12 @@ export class ResourceNode {
 
     // Bushes get a small red-berry overlay so they read as fruit bushes.
     if (kind === 'bush') {
+      // Bigger overlay (60x40) sits across the upper 2/3 of the bush so
+      // the berries are clearly readable at the 70 px display size.
       this.berries = scene.add
-        .sprite(this.visX, this.visY - 6, 'bush_berries')
-        .setOrigin(0.5, 0.7)
-        .setScale(0.55)
+        .sprite(this.visX, this.visY - 18, 'bush_berries')
+        .setOrigin(0.5, 0.5)
+        .setScale(0.7)
         .setDepth(this.visY + 0.5);
     }
   }
