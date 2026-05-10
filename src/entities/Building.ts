@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TILE_SIZE } from '../data/tiles';
 import { BUILDING_DEFS, type BuildingDef, type BuildingId } from '../data/buildings';
+import { AudioSystem } from '../systems/AudioSystem';
 
 let nextId = 0;
 
@@ -167,6 +168,7 @@ export class Building {
       this.dustTimer.remove();
       this.dustTimer = null;
     }
+    AudioSystem.play('build_complete');
     this.scene.events.emit('building-constructed', this);
   }
 

@@ -14,6 +14,7 @@ import { Building } from '../entities/Building';
 import { Unit } from '../entities/Unit';
 import { PowerSystem } from '../systems/PowerSystem';
 import { RaidSystem, type BanditId } from '../systems/RaidSystem';
+import { AudioSystem } from '../systems/AudioSystem';
 import {
   SaveSystem,
   SAVE_VERSION,
@@ -1180,6 +1181,7 @@ export class GameScene extends Phaser.Scene {
     }
     const b = new Building(this, id, tx, ty);
     this.buildings.push(b);
+    AudioSystem.play('place');
     for (const t of b.footprintTiles()) {
       this.buildingTiles.add(this.tileKey(t.tx, t.ty));
     }

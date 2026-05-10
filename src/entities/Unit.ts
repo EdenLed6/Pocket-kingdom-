@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TILE_SIZE } from '../data/tiles';
 import { UNIT_DEFS, type UnitDef, type UnitId, type Side } from '../data/units';
 import { findPath, type TileXY } from '../utils/pathfinding';
+import { AudioSystem } from '../systems/AudioSystem';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -252,6 +253,8 @@ export class Unit {
     this.flashLine.clear();
     this.flashLine.lineStyle(2, this.side === 'player' ? 0xfff0a0 : 0xff6060, 1);
     this.flashLine.lineBetween(this.sprite.x, this.sprite.y - 6, target.worldX, target.worldY - 6);
+    // rangeTiles >= 2 reads as ranged (archer); 1 reads as melee.
+    AudioSystem.play(this.def.rangeTiles >= 2 ? 'arrow' : 'sword');
   }
 
   takeDamage(amount: number): void {
@@ -259,10 +262,12 @@ export class Unit {
     this.hp -= amount;
     if (this.hp <= 0) {
       this._alive = false;
+      AudioSystem.play('die');
       this.scene.events.emit('unit-died', this);
       this.destroy();
       return;
     }
+    AudioSystem.play('hurt');
     this.drawHpBar();
   }
 

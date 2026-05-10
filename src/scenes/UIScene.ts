@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BUILDING_DEFS, BUILDING_ORDER, type BuildingId } from '../data/buildings';
 import { UNIT_DEFS, PLAYER_UNIT_ORDER } from '../data/units';
 import type { Worker } from '../entities/Worker';
+import { AudioSystem } from '../systems/AudioSystem';
 
 const HUD_FONT = {
   fontFamily: 'ui-monospace, monospace',
@@ -81,7 +82,10 @@ export class UIScene extends Phaser.Scene {
       .setDepth(1010)
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
-    pauseBtn.on(Phaser.Input.Events.POINTER_UP, () => this.showPauseMenu());
+    pauseBtn.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
+      this.showPauseMenu();
+    });
 
     this.registry.events.on('changedata', this.onRegistryChange, this);
 
@@ -92,6 +96,7 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
     this.buildButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
       if (this.drawer) {
         this.closeDrawer();
       } else {
@@ -106,6 +111,7 @@ export class UIScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
     this.roadButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      AudioSystem.play('button_tap');
       this.events.emit('road-toggle');
     });
     this.events.on('paint-mode-changed', this.onPaintModeChanged, this);
@@ -330,39 +336,63 @@ export class UIScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
-    // Audio sliders are placeholders until 6c brings real audio in.
-    const audioLabels = ['Master volume', 'Music volume', 'SFX volume'];
-    audioLabels.forEach((lbl, i) => {
-      const y = h * 0.28 + i * 56;
+    // Phase 6c: working volume sliders bound to AudioSystem. Two channels
+    // (master + SFX) — no music slider because BGM is intentionally not
+    // shipped in 6c.
+    const audioCfg: { label: string; get: () => number; set: (v: number) => void }[] = [
+      {
+        label: 'Master volume',
+        get: () => AudioSystem.getSettings().master,
+        set: (v) => AudioSystem.setMasterVolume(v),
+      },
+      {
+        label: 'SFX volume',
+        get: () => AudioSystem.getSettings().sfx,
+        set: (v) => {
+          AudioSystem.setSfxVolume(v);
+          AudioSystem.play('button_tap'); // audible preview while dragging
+        },
+      },
+    ];
+    audioCfg.forEach((cfg, i) => {
+      const y = h * 0.3 + i * 64;
+      const trackX = w / 2 - 100;
+      const trackW = 200;
       c.add(
         this.add
-          .text(w / 2 - 100, y, lbl, {
+          .text(trackX, y, cfg.label, {
             fontFamily: 'ui-monospace, monospace',
             fontSize: '14px',
-            color: '#888888',
+            color: '#cccccc',
           })
           .setOrigin(0, 0.5),
       );
-      const trackX = w / 2 - 100;
-      c.add(
-        this.add
-          .rectangle(trackX, y + 22, 200, 4, 0x444454, 1)
-          .setOrigin(0, 0.5),
-      );
-      c.add(
-        this.add
-          .circle(trackX + 200, y + 22, 8, 0x666677, 1)
-          .setStrokeStyle(1, 0x888888),
-      );
-      c.add(
-        this.add
-          .text(w / 2 - 100, y + 38, '(disabled until 6c audio)', {
-            fontFamily: 'ui-monospace, monospace',
-            fontSize: '11px',
-            color: '#666666',
-          })
-          .setOrigin(0, 0.5),
-      );
+      const track = this.add
+        .rectangle(trackX, y + 24, trackW, 4, 0x444454, 1)
+        .setOrigin(0, 0.5);
+      c.add(track);
+      const handle = this.add
+        .circle(trackX + trackW * cfg.get(), y + 24, 9, 0x80c0ff, 1)
+        .setStrokeStyle(1, 0xffffff)
+        .setInteractive({ useHandCursor: true, draggable: true });
+      c.add(handle);
+      // Hit-area for taps (wider than the handle so finger taps work).
+      const hit = this.add
+        .rectangle(trackX, y + 24, trackW, 28, 0xffffff, 0)
+        .setOrigin(0, 0.5)
+        .setInteractive({ useHandCursor: true });
+      c.add(hit);
+      const apply = (px: number) => {
+        const ratio = Math.max(0, Math.min(1, (px - trackX) / trackW));
+        handle.x = trackX + trackW * ratio;
+        cfg.set(ratio);
+      };
+      hit.on(Phaser.Input.Events.POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
+        apply(pointer.x);
+      });
+      handle.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number) => {
+        apply(dragX);
+      });
     });
 
     // "Reset Progress" — clears localStorage save then reloads.
@@ -882,6 +912,7 @@ export class UIScene extends Phaser.Scene {
     const card: BuildCard = { id, panel, icon, text };
     panel.on(Phaser.Input.Events.POINTER_UP, () => {
       if (panel.getData('locked')) return;
+      AudioSystem.play('button_tap');
       this.events.emit('build-card-selected', id);
       // dismissDrawer (NOT closeDrawer) so we don't emit build-cancel and
       // immediately tear down the placement we just created.

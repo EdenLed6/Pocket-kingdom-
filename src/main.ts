@@ -3,6 +3,9 @@ import { BootScene } from './scenes/BootScene';
 import { PreloadScene } from './scenes/PreloadScene';
 import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
+import { AudioSystem } from './systems/AudioSystem';
+
+AudioSystem.init();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

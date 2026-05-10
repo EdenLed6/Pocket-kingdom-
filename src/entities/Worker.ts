@@ -4,6 +4,7 @@ import { BALANCE, type ResourceType } from '../data/balance';
 import { findPath, type TileXY } from '../utils/pathfinding';
 import type { ResourceNode } from './ResourceNode';
 import type { Building } from './Building';
+import { AudioSystem } from '../systems/AudioSystem';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -330,6 +331,7 @@ export class Worker {
           this.inventoryAmount += yield_;
           this.inventoryResource = node.resource;
           this.sprite.setTint(CARRY_TINT_BY_RESOURCE[node.resource]);
+          AudioSystem.play(node.kind === 'rock' ? 'mine' : 'chop');
           this.startMoveToDropoff(null);
         }
         return;
