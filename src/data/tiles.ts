@@ -24,3 +24,18 @@ export const TILE_COLORS: readonly number[] = [
   0x888888, // stone_ground
   0x7b5c3a, // bridge
 ];
+
+// Source-of-truth lake placement. mapData.WATER tiles are derived from
+// these; the visible water is rendered as smooth Phaser Graphics
+// ellipses on top of a grass tilemap so shorelines aren't stair-stepped.
+export interface LakeConfig {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+}
+export const LAKES: readonly LakeConfig[] = [
+  { cx: 8, cy: 22, rx: 5, ry: 4 },
+  { cx: 32, cy: 14, rx: 4, ry: 3 },
+  { cx: 28, cy: 52, rx: 5, ry: 5 },
+];

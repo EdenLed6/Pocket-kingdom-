@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TouchController } from '../input/TouchController';
 import {
+  LAKES,
   MAP_HEIGHT_TILES,
   MAP_WIDTH_TILES,
   TILE,
@@ -92,9 +93,14 @@ export class GameScene extends Phaser.Scene {
     const worldH = MAP_HEIGHT_TILES * TILE_SIZE;
     this.cameras.main.setBounds(0, 0, worldW, worldH);
 
+    // Replace the squared water tiles in the rendered tilemap with grass
+    // so we can draw smooth lake blobs on top. mapData keeps WATER markers
+    // for pathfinding.
+    this.hideTilemapWater();
+    this.drawLakes();
+
     this.spawnTownHall();
     this.spawnNodes();
-    this.spawnShoreDecorations();
     this.spawnWorkers();
 
     const th = BALANCE.townHall;
@@ -265,39 +271,61 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // Soften the staircase look at lake edges by sprinkling small water-rock
-  // decorations along the boundary between water and grass tiles. Doesn't
-  // affect pathfinding (the rocks are pure visual sprites).
-  private spawnShoreDecorations(): void {
-    const rng = Phaser.Math.RND;
-    rng.sow(['shore-decor']);
+  // Render water tiles as grass in the visible tilemap so the smooth lake
+  // graphics layer can paint on top without showing underlying squares.
+  // mapData keeps WATER markers — pathfinding still blocks.
+  private hideTilemapWater(): void {
     for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
       for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
-        if (this.mapData[ty][tx] !== TILE.WATER) continue;
-        const grassN = ty > 0 && this.mapData[ty - 1][tx] === TILE.GRASS;
-        const grassS = ty < MAP_HEIGHT_TILES - 1 && this.mapData[ty + 1][tx] === TILE.GRASS;
-        const grassW = tx > 0 && this.mapData[ty][tx - 1] === TILE.GRASS;
-        const grassE = tx < MAP_WIDTH_TILES - 1 && this.mapData[ty][tx + 1] === TILE.GRASS;
-        if (!grassN && !grassS && !grassW && !grassE) continue;
-        if (rng.frac() > 0.55) continue;
-        const variant = rng.between(1, 4);
-        const cx = tx * TILE_SIZE + TILE_SIZE / 2;
-        const cy = ty * TILE_SIZE + TILE_SIZE / 2;
-        // Push the rock toward the grass-side neighbour so it visibly sits
-        // on the boundary, breaking the right-angle shoreline.
-        let ox = 0;
-        let oy = 0;
-        if (grassN) oy -= TILE_SIZE * 0.35;
-        if (grassS) oy += TILE_SIZE * 0.35;
-        if (grassW) ox -= TILE_SIZE * 0.35;
-        if (grassE) ox += TILE_SIZE * 0.35;
-        ox += (rng.frac() - 0.5) * 14;
-        oy += (rng.frac() - 0.5) * 14;
-        this.add
-          .sprite(cx + ox, cy + oy, `water_rock_${variant}`)
-          .setOrigin(0.5, 0.7)
-          .setDepth(cy + oy)
-          .setScale(0.7);
+        if (this.mapData[ty][tx] === TILE.WATER) {
+          this.tilemapLayer.putTileAt(TILE.GRASS, tx, ty);
+        }
+      }
+    }
+  }
+
+  // Draw each lake as an irregular polygon (24 jittered points around an
+  // ellipse) with darker rim + lighter inner fill + horizontal wave hints.
+  // Replaces the staircase tilemap edges entirely.
+  private drawLakes(): void {
+    const g = this.add.graphics().setDepth(2);
+    let seed = 7;
+    const next = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    const N = 28;
+    for (const lake of LAKES) {
+      const cx = (lake.cx + 0.5) * TILE_SIZE;
+      const cy = (lake.cy + 0.5) * TILE_SIZE;
+      const rx = lake.rx * TILE_SIZE;
+      const ry = lake.ry * TILE_SIZE;
+
+      const outer: Phaser.Math.Vector2[] = [];
+      const inner: Phaser.Math.Vector2[] = [];
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        const j = 0.86 + next() * 0.28; // 0.86 - 1.14
+        outer.push(new Phaser.Math.Vector2(cx + Math.cos(a) * rx * j, cy + Math.sin(a) * ry * j));
+        inner.push(
+          new Phaser.Math.Vector2(
+            cx + Math.cos(a) * rx * (j - 0.08),
+            cy + Math.sin(a) * ry * (j - 0.08),
+          ),
+        );
+      }
+      // Outer rim (darker) + inner body (lighter).
+      g.fillStyle(0x3a83bc, 1);
+      g.fillPoints(outer, true);
+      g.fillStyle(0x4a93cc, 1);
+      g.fillPoints(inner, true);
+      // Wave highlights — short horizontal stripes within the ellipse.
+      g.fillStyle(0x86c2eb, 0.55);
+      for (let yo = -ry + 8; yo < ry; yo += 14) {
+        const t = yo / ry;
+        const w = rx * Math.sqrt(Math.max(0, 1 - t * t)) * (0.55 + next() * 0.2);
+        const offset = (next() - 0.5) * w * 0.6;
+        g.fillRect(cx - w / 2 + offset, cy + yo, w, 1);
       }
     }
   }

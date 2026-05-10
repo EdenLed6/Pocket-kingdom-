@@ -100,20 +100,25 @@ export class ResourceNode {
     this.treeVariant = kind === 'tree' ? Phaser.Math.Between(1, 4) : 1;
     const initialKey = kind === 'tree' ? `tree_v${this.treeVariant}` : this.cfg.textureKey;
 
-    // Per-tile deterministic jitter so the cluster doesn't read as a
-    // pixel-perfect grid. ±11 px x, ±9 px y is enough to break alignment
-    // without overlapping resource neighbours.
+    // Per-tile deterministic jitter so adjacent same-kind nodes don't
+    // line up on the underlying tile grid. ±26 x / ±20 y is enough to
+    // dissolve the row pattern Eden was seeing inside dense forests.
     const h1 = ((tileX * 73856093) ^ (tileY * 19349663)) >>> 0;
     const h2 = ((tileX * 83492791) ^ (tileY * 32452843)) >>> 0;
-    const jitterX = ((h1 % 1000) / 1000) * 22 - 11;
-    const jitterY = ((h2 % 1000) / 1000) * 18 - 9;
+    const h3 = ((tileX * 50331653) ^ (tileY * 12582917)) >>> 0;
+    const jitterX = ((h1 % 1000) / 1000) * 52 - 26;
+    const jitterY = ((h2 % 1000) / 1000) * 40 - 20;
     this.visX = this.worldX + jitterX;
     this.visY = this.worldY + jitterY;
+
+    // Slight per-instance scale variance for trees so the canopy heights
+    // don't all match. Other kinds keep a uniform scale.
+    const scaleVariance = kind === 'tree' ? ((h3 % 1000) / 1000) * 0.18 - 0.06 : 0;
 
     this.sprite = scene.add
       .sprite(this.visX, this.visY, initialKey)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
-      .setScale(this.cfg.scale)
+      .setScale(this.cfg.scale + scaleVariance)
       .setDepth(this.visY)
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'node').setData('node', this);
