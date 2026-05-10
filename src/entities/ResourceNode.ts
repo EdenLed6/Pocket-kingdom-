@@ -79,20 +79,22 @@ export class ResourceNode {
   private berries: Phaser.GameObjects.Sprite | null = null;
   private scene: Phaser.Scene;
   private remaining: number;
-  // Visible position with deterministic jitter so adjacent same-kind nodes
-  // don't land on a visible tile grid. Pathfinding still aims at worldX/Y.
+  // Visible position is whatever the spawner asked for — may be sub-tile,
+  // off-tile-centre, or even between tiles. tileX/tileY are derived (floor)
+  // and used by Worker pathfinding which still operates at tile resolution.
   private visX: number;
   private visY: number;
 
-  constructor(scene: Phaser.Scene, kind: NodeKind, tileX: number, tileY: number) {
+  // Spawner passes a precise pixel position. tileX/tileY = floor(world/T).
+  constructor(scene: Phaser.Scene, kind: NodeKind, worldX: number, worldY: number) {
     this.scene = scene;
     this.kind = kind;
     this.cfg = CONFIGS[kind];
     this.resource = NODE_TO_RESOURCE[kind];
-    this.tileX = tileX;
-    this.tileY = tileY;
-    this.worldX = tileX * TILE_SIZE + TILE_SIZE / 2;
-    this.worldY = tileY * TILE_SIZE + TILE_SIZE / 2;
+    this.tileX = Math.floor(worldX / TILE_SIZE);
+    this.tileY = Math.floor(worldY / TILE_SIZE);
+    this.worldX = worldX;
+    this.worldY = worldY;
     this.gatherTimeSec = this.cfg.gatherTimeSec;
     this.remaining = this.cfg.totalYield;
 
@@ -100,20 +102,15 @@ export class ResourceNode {
     this.treeVariant = kind === 'tree' ? Phaser.Math.Between(1, 4) : 1;
     const initialKey = kind === 'tree' ? `tree_v${this.treeVariant}` : this.cfg.textureKey;
 
-    // Per-tile deterministic jitter so adjacent same-kind nodes don't
-    // line up on the underlying tile grid. ±26 x / ±20 y is enough to
-    // dissolve the row pattern Eden was seeing inside dense forests.
-    const h1 = ((tileX * 73856093) ^ (tileY * 19349663)) >>> 0;
-    const h2 = ((tileX * 83492791) ^ (tileY * 32452843)) >>> 0;
-    const h3 = ((tileX * 50331653) ^ (tileY * 12582917)) >>> 0;
-    const jitterX = ((h1 % 1000) / 1000) * 52 - 26;
-    const jitterY = ((h2 % 1000) / 1000) * 40 - 20;
-    this.visX = this.worldX + jitterX;
-    this.visY = this.worldY + jitterY;
+    // No internal jitter: the spawner already passes a sub-tile pixel
+    // position. visX/visY just mirror world coords for the sprite.
+    this.visX = worldX;
+    this.visY = worldY;
 
     // Slight per-instance scale variance for trees so the canopy heights
-    // don't all match. Other kinds keep a uniform scale.
-    const scaleVariance = kind === 'tree' ? ((h3 % 1000) / 1000) * 0.18 - 0.06 : 0;
+    // don't all match. Hash uses the pixel position so neighbours differ.
+    const h3 = ((Math.floor(worldX) * 50331653) ^ (Math.floor(worldY) * 12582917)) >>> 0;
+    const scaleVariance = kind === 'tree' ? ((h3 % 1000) / 1000) * 0.2 - 0.07 : 0;
 
     this.sprite = scene.add
       .sprite(this.visX, this.visY, initialKey)

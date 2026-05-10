@@ -436,31 +436,33 @@ export class GameScene extends Phaser.Scene {
       this.fillForest(rng, cx, cy, /*radius*/ rng.between(4, 6), reserved);
     }
 
-    // Rock cluster quarries: 4 blobs of 5-9 rocks each.
+    // Rock cluster quarries: 4 blobs of ~8 rocks each.
     for (let r = 0; r < 4; r++) {
       const cx = rng.between(2, MAP_WIDTH_TILES - 3);
       const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
-      this.fillBlob(rng, 'rock', cx, cy, 2, 0.65, reserved);
+      this.fillBlob(rng, 'rock', cx, cy, 2.5, rng.between(6, 10), reserved);
     }
 
     // Berry patches: 6 small clumps.
     for (let b = 0; b < 6; b++) {
       const cx = rng.between(2, MAP_WIDTH_TILES - 3);
       const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
-      this.fillBlob(rng, 'bush', cx, cy, 2, 0.5, reserved);
+      this.fillBlob(rng, 'bush', cx, cy, 2, rng.between(4, 7), reserved);
     }
 
     // Sheep herds: 4 small grazing groups.
     for (let d = 0; d < 4; d++) {
       const cx = rng.between(2, MAP_WIDTH_TILES - 3);
       const cy = rng.between(2, MAP_HEIGHT_TILES - 3);
-      this.fillBlob(rng, 'animal', cx, cy, 2, 0.35, reserved);
+      this.fillBlob(rng, 'animal', cx, cy, 2, rng.between(2, 4), reserved);
     }
   }
 
-  // Iterates every tile in a circle and places a tree probabilistically
-  // by distance — dense at the centre, feathered at the edges. Produces
-  // genuinely forest-shaped clumps instead of the "ring of trees" look.
+  // Sub-tile forest scattering. Each forest spawns N trees at random
+  // pixel positions inside a circle (radius in tiles). Density falls
+  // smoothly with distance from the centre. Multiple trees per tile is
+  // allowed — adjacent trees no longer share centres on the tile grid,
+  // so the row/column pattern Eden was seeing dissolves.
   private fillForest(
     rng: Phaser.Math.RandomDataGenerator,
     cx: number,
@@ -468,50 +470,64 @@ export class GameScene extends Phaser.Scene {
     radius: number,
     reserved: Set<number>,
   ): void {
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > radius) continue;
-        // 90% chance at centre, fading to ~30% at the edge.
-        const density = 1 - dist / radius;
-        const chance = 0.3 + 0.6 * density;
-        if (rng.frac() < chance) {
-          this.tryPlace('tree', cx + dx, cy + dy, reserved);
-        }
-      }
+    // Aim for high density (≈ 2.2 trees per tile near the centre).
+    const target = Math.floor(radius * radius * Math.PI * 2.2);
+    let placed = 0;
+    let attempts = 0;
+    while (placed < target && attempts < target * 4) {
+      attempts++;
+      // sqrt(r) gives uniform area distribution; bias slightly inward by
+      // raising to 0.7 so the centre packs denser than the edge.
+      const rNorm = Math.pow(rng.frac(), 0.7);
+      const r = rNorm * radius;
+      const a = rng.frac() * Math.PI * 2;
+      const wx = (cx + Math.cos(a) * r) * TILE_SIZE + TILE_SIZE / 2;
+      const wy = (cy + Math.sin(a) * r) * TILE_SIZE + TILE_SIZE / 2;
+      if (this.tryPlaceWorld('tree', wx, wy, reserved)) placed++;
     }
   }
 
-  // Generic tile-grid blob placement for non-tree clusters with a uniform
-  // chance per tile — works well for small rock/bush/herd clumps.
+  // Smaller-scale blob for rocks / bushes / sheep. Same idea: scatter at
+  // random sub-tile positions. `count` is the target (uniform random
+  // distribution over the disk).
   private fillBlob(
     rng: Phaser.Math.RandomDataGenerator,
     kind: NodeKind,
     cx: number,
     cy: number,
     radius: number,
-    chance: number,
+    count: number,
     reserved: Set<number>,
   ): void {
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > radius) continue;
-        if (rng.frac() < chance) {
-          this.tryPlace(kind, cx + dx, cy + dy, reserved);
-        }
-      }
+    let placed = 0;
+    let attempts = 0;
+    while (placed < count && attempts < count * 4) {
+      attempts++;
+      const r = Math.sqrt(rng.frac()) * radius;
+      const a = rng.frac() * Math.PI * 2;
+      const wx = (cx + Math.cos(a) * r) * TILE_SIZE + TILE_SIZE / 2;
+      const wy = (cy + Math.sin(a) * r) * TILE_SIZE + TILE_SIZE / 2;
+      if (this.tryPlaceWorld(kind, wx, wy, reserved)) placed++;
     }
   }
 
-  private tryPlace(kind: NodeKind, tx: number, ty: number, reserved: Set<number>): boolean {
+  // Place a node at an arbitrary world pixel position. Validates the
+  // owning tile (not water, not water-adjacent, not reserved by the
+  // Town Hall buffer) but allows multiple nodes on the same tile so
+  // forests can be densely packed without grid alignment.
+  private tryPlaceWorld(
+    kind: NodeKind,
+    worldX: number,
+    worldY: number,
+    reserved: Set<number>,
+  ): boolean {
+    const tx = Math.floor(worldX / TILE_SIZE);
+    const ty = Math.floor(worldY / TILE_SIZE);
     if (tx < 0 || ty < 0 || tx >= MAP_WIDTH_TILES || ty >= MAP_HEIGHT_TILES) return false;
-    const k = this.tileKey(tx, ty);
-    if (reserved.has(k)) return false;
+    if (reserved.has(this.tileKey(tx, ty))) return false;
     if (this.mapData[ty][tx] !== TILE.GRASS) return false;
-    // Eden's request: nothing should look like it's standing in water.
-    // Reject grass tiles directly adjacent (4-conn) to water so jittered
-    // sprite positions never visually overhang into a lake.
+    // Reject tiles 4-adjacent to water so sprite outlines never visually
+    // hang into a lake.
     const ds: [number, number][] = [
       [tx - 1, ty], [tx + 1, ty], [tx, ty - 1], [tx, ty + 1],
     ];
@@ -519,9 +535,8 @@ export class GameScene extends Phaser.Scene {
       if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) continue;
       if (this.mapData[ny][nx] === TILE.WATER) return false;
     }
-    this.nodes.push(new ResourceNode(this, kind, tx, ty));
-    this.nodeTiles.add(k);
-    reserved.add(k);
+    this.nodes.push(new ResourceNode(this, kind, worldX, worldY));
+    this.nodeTiles.add(this.tileKey(tx, ty));
     return true;
   }
 
