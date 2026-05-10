@@ -22,17 +22,21 @@ export const BALANCE = {
   foodConsumptionPer30Sec: { worker: 1, soldier: 2 },
 
   raid: {
-    firstRaidAtSec: 180,
-    intervalMinSec: 90,
-    intervalMaxSec: 150,
+    // Eden's "easier early game" tuning vs §4.7.2: first raid pushed back
+    // by ~1 minute, intervals 20% longer, opening multiplier dialled down
+    // from 0.40 → 0.30 so the first hit lands light. End-game cap (1.0×)
+    // unchanged.
+    firstRaidAtSec: 240,
+    intervalMinSec: 110,
+    intervalMaxSec: 180,
     warningLeadSec: 10,
     minPower: 20,
     maxRaidUnitCount: 25,
     difficultyTiers: [
-      { untilSec: 300, mult: 0.4 },
-      { untilSec: 600, mult: 0.55 },
-      { untilSec: 900, mult: 0.7 },
-      { untilSec: 1200, mult: 0.85 },
+      { untilSec: 360, mult: 0.3 },
+      { untilSec: 720, mult: 0.45 },
+      { untilSec: 1080, mult: 0.6 },
+      { untilSec: 1440, mult: 0.8 },
       { untilSec: Infinity, mult: 1.0 },
     ],
     powerCapMultiplier: 1.1,

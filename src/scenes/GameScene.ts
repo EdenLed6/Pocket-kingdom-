@@ -13,6 +13,7 @@ import { Worker } from '../entities/Worker';
 import { Building } from '../entities/Building';
 import { Unit } from '../entities/Unit';
 import { PowerSystem } from '../systems/PowerSystem';
+import { RaidSystem, type BanditId } from '../systems/RaidSystem';
 import { BUILDING_DEFS, type BuildingId } from '../data/buildings';
 import { UNIT_DEFS, type UnitId } from '../data/units';
 import type { TileXY } from '../utils/pathfinding';
@@ -159,11 +160,24 @@ export class GameScene extends Phaser.Scene {
     });
     this.events.on('unit-died', this.onUnitDied, this);
 
-    // Phase 4 dummy enemies for the §9 checkpoint: a small group of
-    // stationary bandit grunts up at the north edge of the map. Players
-    // train soldiers and march them up to attack.
-    this.spawnDummyBandits();
+    // §6.5: RaidSystem schedules + spawns enemy waves. Replaces the
+    // Phase 4 stationary dummy bandits. Bandits spawn at a random map
+    // edge and get attack-move'd toward the Town Hall on creation.
+    new RaidSystem(this, {
+      spawnBandit: (id, tx, ty) => this.spawnBandit(id, tx, ty),
+      elapsedSec: () => this.time.now / 1000,
+    });
   }
+
+  private spawnBandit(id: BanditId, tx: number, ty: number): void {
+    const u = new Unit(this, id, tx, ty, this.unitDeps());
+    this.units.push(u);
+    // Send the bandit toward the Town Hall. Unit's attack-move stance
+    // makes it auto-engage any worker / soldier in range along the way.
+    const th = BALANCE.townHall;
+    u.attackMove({ tx: th.tileX + 1, ty: th.tileY + th.sizeTiles });
+  }
+
 
   update(_time: number, delta: number): void {
     const dt = delta / 1000;
@@ -197,18 +211,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
     return best;
-  }
-
-  private spawnDummyBandits(): void {
-    // Three dummies at the north of the map. Phase 5 raids replace this.
-    const positions: TileXY[] = [
-      { tx: 18, ty: 6 },
-      { tx: 21, ty: 7 },
-      { tx: 24, ty: 6 },
-    ];
-    for (const p of positions) {
-      this.units.push(new Unit(this, 'bandit_grunt', p.tx, p.ty, this.unitDeps()));
-    }
   }
 
   private onUnitDied(u: Unit): void {
