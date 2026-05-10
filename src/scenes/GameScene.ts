@@ -589,14 +589,27 @@ export class GameScene extends Phaser.Scene {
     if (tx < 0 || ty < 0 || tx >= MAP_WIDTH_TILES || ty >= MAP_HEIGHT_TILES) return false;
     if (reserved.has(this.tileKey(tx, ty))) return false;
     if (this.mapData[ty][tx] !== TILE.GRASS) return false;
-    // Reject tiles 4-adjacent to water so sprite outlines never visually
-    // hang into a lake.
-    const ds: [number, number][] = [
-      [tx - 1, ty], [tx + 1, ty], [tx, ty - 1], [tx, ty + 1],
-    ];
-    for (const [nx, ny] of ds) {
-      if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) continue;
-      if (this.mapData[ny][nx] === TILE.WATER) return false;
+    // Sprite-extent buffer: the visual reaches beyond the anchor tile, so
+    // we must check more than the anchor itself for water.
+    //   trees: scale ~0.45-0.52 on a 192×256 source, origin (0.5, 0.95).
+    //          Canopy extends ~2 tiles UP and ~1 tile sideways → check a
+    //          3×4 box (dx -1..1, dy -2..1).
+    //   others: smaller; 4-neighbor (N/S/E/W) is enough.
+    const dyMin = kind === 'tree' ? -2 : -1;
+    const dyMax = kind === 'tree' ? 1 : 1;
+    const dxMin = kind === 'tree' ? -1 : -1;
+    const dxMax = kind === 'tree' ? 1 : 1;
+    for (let dy = dyMin; dy <= dyMax; dy++) {
+      for (let dx = dxMin; dx <= dxMax; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        // For non-trees, only check 4-neighbours (skip diagonals) to keep
+        // the previous behaviour for small sprites.
+        if (kind !== 'tree' && dx !== 0 && dy !== 0) continue;
+        const nx = tx + dx;
+        const ny = ty + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_WIDTH_TILES || ny >= MAP_HEIGHT_TILES) continue;
+        if (this.mapData[ny][nx] === TILE.WATER) return false;
+      }
     }
     // Trees may stack with other trees (dense forests); but rocks /
     // bushes / sheep can't share a tile with anything already placed.
