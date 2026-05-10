@@ -12,6 +12,7 @@ import { ResourceNode } from '../entities/ResourceNode';
 import { Worker } from '../entities/Worker';
 import { Building } from '../entities/Building';
 import { Unit } from '../entities/Unit';
+import { PowerSystem } from '../systems/PowerSystem';
 import { BUILDING_DEFS, type BuildingId } from '../data/buildings';
 import { UNIT_DEFS, type UnitId } from '../data/units';
 import type { TileXY } from '../utils/pathfinding';
@@ -143,6 +144,19 @@ export class GameScene extends Phaser.Scene {
     ui.events.on('road-toggle', this.toggleRoadMode, this);
     // Register once; per-placement handlers leaked in the 3b draft.
     this.events.on('building-constructed', this.onBuildingConstructed, this);
+
+    // §6.6: PowerSystem recomputes P_player every 5s and writes it to
+    // registry 'pPlayer'. RaidSystem (5b) reads from there. The system
+    // self-cleans on scene shutdown; no scene-level reference needed.
+    new PowerSystem(this, {
+      workers: () => this.workers,
+      playerUnits: () => this.units.filter((u) => u.side === 'player'),
+      buildings: () => this.buildings,
+      resourceTotal: () =>
+        ((this.registry.get('wood') as number) ?? 0) +
+        ((this.registry.get('stone') as number) ?? 0) +
+        ((this.registry.get('food') as number) ?? 0),
+    });
     this.events.on('unit-died', this.onUnitDied, this);
 
     // Phase 4 dummy enemies for the §9 checkpoint: a small group of
