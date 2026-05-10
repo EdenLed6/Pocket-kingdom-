@@ -5,6 +5,7 @@ import { findPath, type TileXY } from '../utils/pathfinding';
 import type { ResourceNode } from './ResourceNode';
 import type { Building } from './Building';
 import { AudioSystem } from '../systems/AudioSystem';
+import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -332,6 +333,15 @@ export class Worker {
           this.inventoryResource = node.resource;
           this.sprite.setTint(CARRY_TINT_BY_RESOURCE[node.resource]);
           AudioSystem.play(node.kind === 'rock' ? 'mine' : 'chop');
+          JuiceSystem.burst(
+            this.sprite.scene,
+            node.worldX,
+            node.worldY,
+            node.kind === 'rock' ? JUICE_COLORS.stone
+              : node.resource === 'food' ? JUICE_COLORS.food
+              : JUICE_COLORS.wood,
+            { count: 5, speedPxPerSec: 70, lifeMs: 320 },
+          );
           this.startMoveToDropoff(null);
         }
         return;

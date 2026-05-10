@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TILE_SIZE } from '../data/tiles';
 import { BUILDING_DEFS, type BuildingDef, type BuildingId } from '../data/buildings';
 import { AudioSystem } from '../systems/AudioSystem';
+import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
 
 let nextId = 0;
 
@@ -130,7 +131,26 @@ export class Building {
   takeDamage(amount: number): void {
     if (this.hp <= 0) return;
     this.hp = Math.max(0, this.hp - amount);
+    JuiceSystem.flash(this.sprite, 60);
+    JuiceSystem.burst(this.scene, this.sprite.x, this.sprite.y, JUICE_COLORS.build_dust, {
+      count: 4,
+      speedPxPerSec: 50,
+      lifeMs: 320,
+    });
+    // Bigger feedback when something important is being chewed on: the
+    // Town Hall is the loss condition, so a small shake reinforces "this
+    // matters".
+    if (this.def.id === 'town_hall') {
+      JuiceSystem.shake(this.scene, 0.004, 140);
+    }
     if (this.hp <= 0) {
+      JuiceSystem.shake(this.scene, 0.012, 320);
+      JuiceSystem.burst(this.scene, this.sprite.x, this.sprite.y, JUICE_COLORS.build_dust, {
+        count: 18,
+        speedPxPerSec: 130,
+        lifeMs: 600,
+        size: 3,
+      });
       this.scene.events.emit('building-destroyed', this);
       this.destroy();
     }

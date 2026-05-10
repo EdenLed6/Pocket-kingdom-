@@ -3,6 +3,7 @@ import { TILE_SIZE } from '../data/tiles';
 import { UNIT_DEFS, type UnitDef, type UnitId, type Side } from '../data/units';
 import { findPath, type TileXY } from '../utils/pathfinding';
 import { AudioSystem } from '../systems/AudioSystem';
+import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
 
 type IsWalkable = (tx: number, ty: number) => boolean;
 
@@ -260,14 +261,27 @@ export class Unit {
   takeDamage(amount: number): void {
     if (!this._alive) return;
     this.hp -= amount;
+    const bloodColor = this.side === 'player' ? JUICE_COLORS.blood_player : JUICE_COLORS.blood_enemy;
     if (this.hp <= 0) {
       this._alive = false;
       AudioSystem.play('die');
+      JuiceSystem.burst(this.scene, this.sprite.x, this.sprite.y, bloodColor, {
+        count: 10,
+        speedPxPerSec: 110,
+        lifeMs: 480,
+        size: 2.5,
+      });
       this.scene.events.emit('unit-died', this);
       this.destroy();
       return;
     }
     AudioSystem.play('hurt');
+    JuiceSystem.flash(this.sprite, 70);
+    JuiceSystem.burst(this.scene, this.sprite.x, this.sprite.y - 4, bloodColor, {
+      count: 4,
+      speedPxPerSec: 60,
+      lifeMs: 260,
+    });
     this.drawHpBar();
   }
 

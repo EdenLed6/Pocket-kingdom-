@@ -15,6 +15,7 @@ import { Unit } from '../entities/Unit';
 import { PowerSystem } from '../systems/PowerSystem';
 import { RaidSystem, type BanditId } from '../systems/RaidSystem';
 import { AudioSystem } from '../systems/AudioSystem';
+import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
 import {
   SaveSystem,
   SAVE_VERSION,
@@ -140,7 +141,10 @@ export class GameScene extends Phaser.Scene {
     ui.events.on('train-unit', this.onTrainUnitRequest, this);
     ui.events.on('train-worker', this.onTrainWorkerRequest, this);
     ui.events.on('road-toggle', this.toggleRoadMode, this);
-    ui.events.on('save-now', () => SaveSystem.save(this.buildSnapshot()));
+    ui.events.on('save-now', () => {
+      SaveSystem.save(this.buildSnapshot());
+      ui.events.emit('saved-toast', 'Saved');
+    });
     ui.events.on('load-game', () => {
       // Save is already in localStorage; reload picks it up via auto-load.
       window.location.reload();
@@ -219,6 +223,13 @@ export class GameScene extends Phaser.Scene {
       enemy.takeDamage(15);
       this.towerCooldown.set(b.instanceId, 2);
       this.drawTowerFlash(b.worldX, b.worldY, enemy.worldX, enemy.worldY);
+      // Spark at the impact end so the player's eye is drawn to the kill,
+      // not the tower.
+      JuiceSystem.burst(this, enemy.worldX, enemy.worldY, JUICE_COLORS.spark, {
+        count: 5,
+        speedPxPerSec: 70,
+        lifeMs: 240,
+      });
     }
   }
 
@@ -901,10 +912,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private startAutoSave(): void {
+    const ui = this.scene.get('UI');
     this.time.addEvent({
       delay: 30_000,
       loop: true,
-      callback: () => SaveSystem.save(this.buildSnapshot()),
+      callback: () => {
+        SaveSystem.save(this.buildSnapshot());
+        ui.events.emit('saved-toast', 'Auto-saved');
+      },
     });
   }
 

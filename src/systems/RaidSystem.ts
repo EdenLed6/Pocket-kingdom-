@@ -3,6 +3,7 @@ import { BALANCE } from '../data/balance';
 import { MAP_HEIGHT_TILES, MAP_WIDTH_TILES } from '../data/tiles';
 import type { UnitId } from '../data/units';
 import { AudioSystem } from './AudioSystem';
+import { JuiceSystem } from './JuiceSystem';
 
 export type BanditId = Extract<UnitId, 'bandit_grunt' | 'bandit_archer' | 'bandit_raider'>;
 
@@ -110,6 +111,7 @@ export class RaidSystem {
       leadSec: BALANCE.raid.warningLeadSec,
     });
     AudioSystem.play('raid_warning');
+    JuiceSystem.shake(this.scene, 0.008, 280);
     this.scene.time.delayedCall(BALANCE.raid.warningLeadSec * 1000, () => {
       composition.forEach((entry, i) => {
         const dx = (i % 5) - 2;

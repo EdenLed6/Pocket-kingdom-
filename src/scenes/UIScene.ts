@@ -125,6 +125,7 @@ export class UIScene extends Phaser.Scene {
     this.events.on('close-worker-panel', this.closeWorkerPanel, this);
     this.events.on('show-placement-banner', this.showPlacementBanner, this);
     this.events.on('hide-placement-banner', this.hidePlacementBanner, this);
+    this.events.on('saved-toast', this.showSavedToast, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onRegistryChange, this);
@@ -676,6 +677,49 @@ export class UIScene extends Phaser.Scene {
     if (!this.placementBanner) return;
     this.placementBanner.destroy();
     this.placementBanner = null;
+  }
+
+  // Brief top-right chip that fades in/out, used for both manual saves and
+  // the 30s autosave tick so the player knows their progress is durable.
+  private savedToast: Phaser.GameObjects.Container | null = null;
+  private showSavedToast(label: string): void {
+    if (this.savedToast) {
+      this.savedToast.destroy();
+      this.savedToast = null;
+    }
+    const w = this.scale.width;
+    const text = this.add.text(0, 0, label, { ...HUD_FONT, fontSize: '13px' }).setOrigin(0, 0);
+    const padX = 10;
+    const padY = 6;
+    const bg = this.add
+      .rectangle(0, 0, text.width + padX * 2, text.height + padY * 2, 0x222230, 0.92)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x80c080);
+    text.setPosition(padX, padY);
+    const c = this.add
+      .container(w - bg.width - 12, 80, [bg, text])
+      .setDepth(1400)
+      .setScrollFactor(0)
+      .setAlpha(0);
+    this.savedToast = c;
+    this.tweens.add({
+      targets: c,
+      alpha: 1,
+      duration: 160,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: c,
+          alpha: 0,
+          delay: 1200,
+          duration: 320,
+          onComplete: () => {
+            if (this.savedToast === c) this.savedToast = null;
+            c.destroy();
+          },
+        });
+      },
+    });
   }
 
   // ---------- unified building selection panel ------------------------------
