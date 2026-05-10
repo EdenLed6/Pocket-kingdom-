@@ -184,6 +184,33 @@ export class Building {
     this.progressBar.fillRect(x, y, Math.max(0, Math.floor(W * ratio)), H);
   }
 
+  // Save/load (§6.7).
+  snapshot(): {
+    id: BuildingId;
+    tileX: number;
+    tileY: number;
+    hp: number;
+    isConstructed: boolean;
+    buildProgress: number;
+  } {
+    return {
+      id: this.def.id,
+      tileX: this.tileX,
+      tileY: this.tileY,
+      hp: this.hp,
+      isConstructed: this.isConstructed,
+      buildProgress: this.buildProgress,
+    };
+  }
+
+  // Apply saved fields after a fresh constructor + (optional) markPrebuilt.
+  // Caller decides whether to flip to constructed via markPrebuilt() first.
+  restoreFrom(snap: { hp: number; buildProgress: number }): void {
+    this.hp = snap.hp;
+    this.buildProgress = snap.buildProgress;
+    if (!this.isConstructed) this.drawProgressBar();
+  }
+
   destroy(): void {
     this.sprite.destroy();
     this.progressBar.destroy();

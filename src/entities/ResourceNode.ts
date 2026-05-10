@@ -218,6 +218,25 @@ export class ResourceNode {
     if (this.berries) this.berries.setVisible(true);
   }
 
+  // Save/load (§6.7).
+  snapshot(): { kind: NodeKind; worldX: number; worldY: number; remaining: number } {
+    return {
+      kind: this.kind,
+      worldX: this.worldX,
+      worldY: this.worldY,
+      remaining: this.remaining,
+    };
+  }
+
+  setRemaining(amount: number): void {
+    this.remaining = Math.max(0, Math.min(this.cfg.totalYield, amount));
+    if (this.remaining <= 0) {
+      this.deplete();
+    } else {
+      this.updateVisualWear();
+    }
+  }
+
   destroy(): void {
     this.sprite.destroy();
     if (this.berries) this.berries.destroy();

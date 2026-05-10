@@ -518,6 +518,40 @@ export class Worker {
     }
   }
 
+  // Save/load (§6.7) — minimal state for SaveSystem. We don't preserve
+  // in-flight FSM (mid-chop, mid-build, etc); workers come back idle.
+  snapshot(): {
+    worldX: number;
+    worldY: number;
+    autoMode: 'gather' | 'build' | null;
+    autoResource: ResourceType | null;
+    inventoryAmount: number;
+    inventoryResource: ResourceType | null;
+  } {
+    return {
+      worldX: this.sprite.x,
+      worldY: this.sprite.y,
+      autoMode: this.autoMode,
+      autoResource: this.autoResource,
+      inventoryAmount: this.inventoryAmount,
+      inventoryResource: this.inventoryResource,
+    };
+  }
+
+  restoreFrom(snap: ReturnType<Worker['snapshot']>): void {
+    this.sprite.setPosition(snap.worldX, snap.worldY);
+    this.ring.setPosition(snap.worldX, snap.worldY + 6);
+    this.inventoryAmount = snap.inventoryAmount;
+    this.inventoryResource = snap.inventoryResource;
+    this.autoMode = snap.autoMode;
+    this.autoResource = snap.autoResource;
+    this.state = { kind: 'idle' };
+    this.path = [];
+    if (this.inventoryResource && this.inventoryAmount > 0) {
+      this.sprite.setTint(CARRY_TINT_BY_RESOURCE[this.inventoryResource]);
+    }
+  }
+
   destroy(): void {
     this.sprite.destroy();
     this.ring.destroy();

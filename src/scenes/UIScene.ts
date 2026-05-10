@@ -237,8 +237,17 @@ export class UIScene extends Phaser.Scene {
 
     const items: { label: string; disabled?: boolean; onTap: () => void }[] = [
       { label: 'Resume', onTap: () => this.hidePauseMenu() },
-      { label: 'Save (6b)', disabled: true, onTap: () => {} },
-      { label: 'Load (6b)', disabled: true, onTap: () => {} },
+      {
+        label: 'Save',
+        onTap: () => {
+          this.events.emit('save-now');
+          this.flashPauseToast('Saved.');
+        },
+      },
+      {
+        label: 'Load',
+        onTap: () => this.events.emit('load-game'),
+      },
       { label: 'Settings', onTap: () => this.showSettings() },
       { label: 'Quit', onTap: () => window.location.reload() },
     ];
@@ -280,6 +289,30 @@ export class UIScene extends Phaser.Scene {
     this.pausePanel = null;
     const game = this.scene.get('Game');
     if (game.scene.isPaused() && !this.gameOverPanel) game.scene.resume();
+  }
+
+  // Ephemeral toast over the pause overlay (e.g. "Saved.").
+  private flashPauseToast(text: string): void {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const t = this.add
+      .text(w / 2, h * 0.84, text, {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '14px',
+        color: '#a8ffa8',
+        backgroundColor: 'rgba(0,0,0,0.65)',
+        padding: { left: 10, right: 10, top: 5, bottom: 5 },
+      })
+      .setOrigin(0.5)
+      .setDepth(1960)
+      .setScrollFactor(0);
+    this.tweens.add({
+      targets: t,
+      alpha: { from: 1, to: 0 },
+      delay: 900,
+      duration: 600,
+      onComplete: () => t.destroy(),
+    });
   }
 
   private showSettings(): void {
@@ -332,22 +365,24 @@ export class UIScene extends Phaser.Scene {
       );
     });
 
-    // "Reset Progress" — wired in 6b when localStorage save is in.
+    // "Reset Progress" — clears localStorage save then reloads.
     const resetY = h * 0.62;
-    const rrW = 200;
+    const rrW = 220;
     const rrH = 40;
     const rrX = w / 2 - rrW / 2;
     const reset = this.add
-      .rectangle(rrX, resetY, rrW, rrH, 0x222230, 1)
+      .rectangle(rrX, resetY, rrW, rrH, 0x4a1a1a, 1)
       .setOrigin(0, 0)
-      .setStrokeStyle(2, 0x444454);
+      .setStrokeStyle(2, 0xc06060)
+      .setInteractive({ useHandCursor: true });
     const resetLabel = this.add
-      .text(rrX + rrW / 2, resetY + rrH / 2, 'Reset Progress (6b)', {
+      .text(rrX + rrW / 2, resetY + rrH / 2, 'Reset Progress', {
         fontFamily: 'ui-monospace, monospace',
         fontSize: '14px',
-        color: '#777777',
+        color: '#ffd0d0',
       })
       .setOrigin(0.5);
+    reset.on(Phaser.Input.Events.POINTER_UP, () => this.events.emit('reset-progress'));
     c.add(reset);
     c.add(resetLabel);
 

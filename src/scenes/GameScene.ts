@@ -14,6 +14,12 @@ import { Building } from '../entities/Building';
 import { Unit } from '../entities/Unit';
 import { PowerSystem } from '../systems/PowerSystem';
 import { RaidSystem, type BanditId } from '../systems/RaidSystem';
+import {
+  SaveSystem,
+  SAVE_VERSION,
+  type SaveData,
+  type SavedTile,
+} from '../systems/SaveSystem';
 import { BUILDING_DEFS, type BuildingId } from '../data/buildings';
 import { UNIT_DEFS, type UnitId } from '../data/units';
 import type { TileXY } from '../utils/pathfinding';
@@ -106,10 +112,6 @@ export class GameScene extends Phaser.Scene {
     this.markLakeWater();
     this.redrawWater();
 
-    this.spawnTownHall();
-    this.spawnNodes();
-    this.spawnWorkers();
-
     const th = BALANCE.townHall;
     const thCenterX = (th.tileX + th.sizeTiles / 2) * TILE_SIZE;
     const thCenterY = (th.tileY + th.sizeTiles / 2) * TILE_SIZE;
@@ -117,21 +119,15 @@ export class GameScene extends Phaser.Scene {
 
     this.touch = new TouchController(this, { minZoom: 0.7, maxZoom: 2.0 });
 
-    const start = BALANCE.startingResources;
-    const cap = BALANCE.storage.initialCap;
-    this.registry.set(REGISTRY_KEY.wood, start.wood);
-    this.registry.set(REGISTRY_KEY.stone, start.stone);
-    this.registry.set(REGISTRY_KEY.food, start.food);
-    this.registry.set(REGISTRY_CAP_KEY.wood, cap.wood);
-    this.registry.set(REGISTRY_CAP_KEY.stone, cap.stone);
-    this.registry.set(REGISTRY_CAP_KEY.food, cap.food);
-    // Tracks which buildings have ever been constructed, for prereq checks.
-    this.registry.set('builtIds', new Set<BuildingId>(['town_hall' as BuildingId]));
-
-    // Pop cap starts with the Town Hall's contribution; each completed
-    // House adds +3 (§4.4). Pop count is just the number of living workers.
-    this.registry.set('popCap', 5);
-    this.registry.set('pop', this.workers.length);
+    // §6.7: auto-load if a compatible save exists; otherwise fresh spawn.
+    // Player wipes via Settings → Reset Progress.
+    const snap = SaveSystem.load();
+    if (snap) {
+      console.log('[SaveSystem] restoring from save');
+      this.applySnapshot(snap);
+    } else {
+      this.spawnFresh();
+    }
 
     this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
     this.input.on(Phaser.Input.Events.POINTER_UP, this.onPointerUp, this);
@@ -143,6 +139,15 @@ export class GameScene extends Phaser.Scene {
     ui.events.on('train-unit', this.onTrainUnitRequest, this);
     ui.events.on('train-worker', this.onTrainWorkerRequest, this);
     ui.events.on('road-toggle', this.toggleRoadMode, this);
+    ui.events.on('save-now', () => SaveSystem.save(this.buildSnapshot()));
+    ui.events.on('load-game', () => {
+      // Save is already in localStorage; reload picks it up via auto-load.
+      window.location.reload();
+    });
+    ui.events.on('reset-progress', () => {
+      SaveSystem.clear();
+      window.location.reload();
+    });
     // Register once; per-placement handlers leaked in the 3b draft.
     this.events.on('building-constructed', this.onBuildingConstructed, this);
 
@@ -168,6 +173,9 @@ export class GameScene extends Phaser.Scene {
       spawnBandit: (id, tx, ty) => this.spawnBandit(id, tx, ty),
       elapsedSec: () => this.time.now / 1000,
     });
+
+    // §6.7: auto-save every 30s. Boot's auto-load picks it up next time.
+    this.startAutoSave();
   }
 
   private spawnBandit(id: BanditId, tx: number, ty: number): void {
@@ -749,6 +757,154 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < BALANCE.startingWorkers; i++) {
       this.workers.push(new Worker(i, this, spawnTiles[i].tx, spawnTiles[i].ty, deps));
     }
+  }
+
+  // ---------- fresh spawn vs snapshot restore (§6.7) ------------------------
+
+  private spawnFresh(): void {
+    this.spawnTownHall();
+    this.spawnNodes();
+    this.spawnWorkers();
+
+    const start = BALANCE.startingResources;
+    const cap = BALANCE.storage.initialCap;
+    this.registry.set(REGISTRY_KEY.wood, start.wood);
+    this.registry.set(REGISTRY_KEY.stone, start.stone);
+    this.registry.set(REGISTRY_KEY.food, start.food);
+    this.registry.set(REGISTRY_CAP_KEY.wood, cap.wood);
+    this.registry.set(REGISTRY_CAP_KEY.stone, cap.stone);
+    this.registry.set(REGISTRY_CAP_KEY.food, cap.food);
+    this.registry.set('builtIds', new Set<BuildingId>(['town_hall' as BuildingId]));
+    this.registry.set('popCap', 5);
+    this.registry.set('pop', this.workers.length);
+  }
+
+  private applySnapshot(snap: SaveData): void {
+    // 1. Re-paint mapData with the player's painted tiles (water channels +
+    //    dirt paths). Lake water was already marked by markLakeWater().
+    for (const t of snap.paintedTiles) {
+      this.mapData[t.ty][t.tx] = t.tile;
+      if (t.tile === TILE.DIRT_PATH) {
+        this.tilemapLayer.putTileAt(TILE.DIRT_PATH, t.tx, t.ty);
+      }
+    }
+    this.redrawWater();
+
+    // 2. Buildings — same constructor as default spawn, then restoreFrom.
+    for (const b of snap.buildings) {
+      const building = new Building(this, b.id, b.tileX, b.tileY);
+      if (b.isConstructed) building.markPrebuilt();
+      building.restoreFrom({ hp: b.hp, buildProgress: b.buildProgress });
+      this.buildings.push(building);
+      for (const t of building.footprintTiles()) {
+        this.buildingTiles.add(this.tileKey(t.tx, t.ty));
+      }
+      // Wire the same effects that onBuildingConstructed installs (farm
+      // passive food). Houses / Warehouse pop+cap math is reflected in
+      // saved popCap / capKey values, so we don't double-apply here.
+      if (b.isConstructed && b.id === 'farm') {
+        const farmTile = building.interactionTile;
+        this.time.addEvent({
+          delay: 5000,
+          loop: true,
+          callback: () => {
+            if (building.activeTenders > 0) this.deposit('food', 1, farmTile);
+          },
+        });
+      }
+    }
+
+    // 3. Resource nodes.
+    for (const n of snap.nodes) {
+      const node = new ResourceNode(this, n.kind, n.worldX, n.worldY);
+      node.setRemaining(n.remaining);
+      this.nodes.push(node);
+      this.nodeTiles.add(this.tileKey(node.tileX, node.tileY));
+    }
+
+    // 4. Workers.
+    const deps = {
+      mapWidthTiles: MAP_WIDTH_TILES,
+      mapHeightTiles: MAP_HEIGHT_TILES,
+      isWalkable: this.isWalkable.bind(this),
+      getDropoffTile: this.getDropoffTile.bind(this),
+      deposit: this.deposit.bind(this),
+      findNearestNode: this.findNearestNode.bind(this),
+      findNearestSite: this.findNearestSite.bind(this),
+      isBanditNearby: this.isBanditNearby.bind(this),
+      getHomeTile: this.getHomeTile.bind(this),
+    };
+    for (let i = 0; i < snap.workers.length; i++) {
+      const w = snap.workers[i];
+      const tx = Math.floor(w.worldX / TILE_SIZE);
+      const ty = Math.floor(w.worldY / TILE_SIZE);
+      const worker = new Worker(i, this, tx, ty, deps);
+      worker.restoreFrom(w);
+      this.workers.push(worker);
+    }
+
+    // 5. Registry — saved values trump initialCap.
+    this.registry.set(REGISTRY_KEY.wood, snap.resources.wood);
+    this.registry.set(REGISTRY_KEY.stone, snap.resources.stone);
+    this.registry.set(REGISTRY_KEY.food, snap.resources.food);
+    this.registry.set(REGISTRY_CAP_KEY.wood, snap.resources.woodCap);
+    this.registry.set(REGISTRY_CAP_KEY.stone, snap.resources.stoneCap);
+    this.registry.set(REGISTRY_CAP_KEY.food, snap.resources.foodCap);
+    this.registry.set('builtIds', new Set<BuildingId>(snap.builtIds));
+    this.registry.set('popCap', snap.popCap);
+    this.registry.set('pop', snap.pop);
+  }
+
+  private buildSnapshot(): SaveData {
+    // Painted tiles = WATER tiles outside lakes, plus all DIRT_PATH tiles.
+    const painted: SavedTile[] = [];
+    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
+      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
+        const t = this.mapData[ty][tx];
+        if (t === TILE.DIRT_PATH) {
+          painted.push({ tx, ty, tile: t });
+        } else if (t === TILE.WATER) {
+          // Skip lake water; it's regenerated from LAKES.
+          let inLake = false;
+          const cx = (tx + 0.5) * TILE_SIZE;
+          const cy = (ty + 0.5) * TILE_SIZE;
+          for (const poly of this.lakePolygons) {
+            if (this.pointInPolygon(cx, cy, poly)) {
+              inLake = true;
+              break;
+            }
+          }
+          if (!inLake) painted.push({ tx, ty, tile: t });
+        }
+      }
+    }
+    return {
+      saveVersion: SAVE_VERSION,
+      savedAtMs: Date.now(),
+      resources: {
+        wood: (this.registry.get(REGISTRY_KEY.wood) as number) ?? 0,
+        stone: (this.registry.get(REGISTRY_KEY.stone) as number) ?? 0,
+        food: (this.registry.get(REGISTRY_KEY.food) as number) ?? 0,
+        woodCap: (this.registry.get(REGISTRY_CAP_KEY.wood) as number) ?? 0,
+        stoneCap: (this.registry.get(REGISTRY_CAP_KEY.stone) as number) ?? 0,
+        foodCap: (this.registry.get(REGISTRY_CAP_KEY.food) as number) ?? 0,
+      },
+      pop: (this.registry.get('pop') as number) ?? 0,
+      popCap: (this.registry.get('popCap') as number) ?? 0,
+      builtIds: Array.from(this.registry.get('builtIds') as Set<BuildingId>),
+      buildings: this.buildings.map((b) => b.snapshot()),
+      workers: this.workers.map((w) => w.snapshot()),
+      nodes: this.nodes.map((n) => n.snapshot()),
+      paintedTiles: painted,
+    };
+  }
+
+  private startAutoSave(): void {
+    this.time.addEvent({
+      delay: 30_000,
+      loop: true,
+      callback: () => SaveSystem.save(this.buildSnapshot()),
+    });
   }
 
   // ---------- shared helpers --------------------------------------------------
