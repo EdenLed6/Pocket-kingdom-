@@ -488,10 +488,10 @@ export class GameScene extends Phaser.Scene {
     // (instead of random scatter, which left visible "row" patterns and
     // sparse clumps). Density falls smoothly from centre to edge so the
     // silhouette reads as a real forest, not a circle of trees.
-    for (let f = 0; f < 6; f++) {
+    for (let f = 0; f < 5; f++) {
       const cx = rng.between(4, MAP_WIDTH_TILES - 5);
       const cy = rng.between(4, MAP_HEIGHT_TILES - 5);
-      this.fillForest(rng, cx, cy, /*radius*/ rng.between(4, 6), reserved);
+      this.fillForest(rng, cx, cy, /*radius*/ rng.between(2, 4), reserved);
     }
 
     // Rock cluster quarries: 4 blobs of ~8 rocks each.
@@ -528,11 +528,11 @@ export class GameScene extends Phaser.Scene {
     radius: number,
     reserved: Set<number>,
   ): void {
-    // Moderate density (≈ 2.5 trees per tile). 4.0 was too dense — Eden
-    // said the forests felt overcrowded. The other variety knobs (4 tree
-    // variants, ±0.07 scale, random horizontal flip, sub-tile positions)
-    // hide the row pattern without needing absurd density.
-    const target = Math.floor(radius * radius * Math.PI * 2.5);
+    // Moderate density (≈ 1.5 trees per tile). 2.5 still felt cramped to
+    // Eden. The variety knobs (4 tree variants, ±0.07 scale, random
+    // horizontal flip, sub-tile positions) hide the row pattern without
+    // needing absurd density.
+    const target = Math.floor(radius * radius * Math.PI * 1.5);
     let placed = 0;
     let attempts = 0;
     while (placed < target && attempts < target * 4) {
