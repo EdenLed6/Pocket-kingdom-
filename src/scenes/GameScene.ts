@@ -763,14 +763,16 @@ export class GameScene extends Phaser.Scene {
       for (let dx = 0; dx < def.footprint.w; dx++) {
         const cx = tx + dx;
         const cy = ty + dy;
-        if (this.mapData[cy][cx] === TILE.WATER) return false;
+        // Eden: building must be on FREE grass — not water, not path, not
+        // stone, not a tree/rock/bush, not another building.
+        if (this.mapData[cy][cx] !== TILE.GRASS) return false;
         const k = this.tileKey(cx, cy);
         if (this.buildingTiles.has(k)) return false;
         if (this.nodeTiles.has(k)) return false;
       }
     }
     if (!this.prereqsMet(id)) return false;
-    // Eden's request: farms must be placed next to water (irrigation).
+    // Farm exception: must be placed next to water (irrigation).
     if (id === 'farm' && !this.hasAdjacentWater(tx, ty, def.footprint.w, def.footprint.h)) {
       return false;
     }
