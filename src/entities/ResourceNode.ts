@@ -46,8 +46,10 @@ const CONFIGS: Record<NodeKind, NodeConfig> = {
     kind: 'bush',
     textureKey: 'bush',
     stumpTextureKey: 'bush-bare',
-    origin: [0.5, 0.75],
-    scale: 0.55, // 128 → 70 px
+    origin: [0.5, 0.85],
+    // berry_bush.png is 64×64 native — at scale 1.0 it sits at one
+    // tile, slightly bigger than rocks/sheep so the fruit reads.
+    scale: 1.0,
     regrowSec: BALANCE.nodes.bushRegrowSec,
     yieldPerChop: BALANCE.nodes.yieldPerChop.bush,
     totalYield: BALANCE.nodes.totalYield.bush,

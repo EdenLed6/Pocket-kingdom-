@@ -57,7 +57,10 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('rock_v1', 'assets/sprites/ts/resources/rock1.png');
     this.load.image('rock_v2', 'assets/sprites/ts/resources/rock2.png');
     this.load.image('rock_v3', 'assets/sprites/ts/resources/rock3.png');
-    this.load.spritesheet('bush', 'assets/sprites/ts/resources/bush.png', SQUARE_128);
+    // Berry bush from craftpix.net free top-down trees pack (Fruit_tree3 —
+    // a 64×64 round bush with red fruits, no trunk). Eden uploaded it as
+    // a replacement for the procedural berry overlay we abandoned.
+    this.load.image('bush', 'assets/sprites/ts/resources/berry_bush.png');
     this.load.spritesheet('deer', 'assets/sprites/ts/resources/sheep_idle.png', SQUARE_128);
     // Shore decorations to soften the staircase look at lake edges.
     for (let n = 1; n <= 4; n++) {
