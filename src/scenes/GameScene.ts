@@ -94,6 +94,7 @@ export class GameScene extends Phaser.Scene {
 
     this.spawnTownHall();
     this.spawnNodes();
+    this.spawnShoreDecorations();
     this.spawnWorkers();
 
     const th = BALANCE.townHall;
@@ -261,6 +262,43 @@ export class GameScene extends Phaser.Scene {
     this.buildings.push(b);
     for (const t of b.footprintTiles()) {
       this.buildingTiles.add(this.tileKey(t.tx, t.ty));
+    }
+  }
+
+  // Soften the staircase look at lake edges by sprinkling small water-rock
+  // decorations along the boundary between water and grass tiles. Doesn't
+  // affect pathfinding (the rocks are pure visual sprites).
+  private spawnShoreDecorations(): void {
+    const rng = Phaser.Math.RND;
+    rng.sow(['shore-decor']);
+    for (let ty = 0; ty < MAP_HEIGHT_TILES; ty++) {
+      for (let tx = 0; tx < MAP_WIDTH_TILES; tx++) {
+        if (this.mapData[ty][tx] !== TILE.WATER) continue;
+        const grassN = ty > 0 && this.mapData[ty - 1][tx] === TILE.GRASS;
+        const grassS = ty < MAP_HEIGHT_TILES - 1 && this.mapData[ty + 1][tx] === TILE.GRASS;
+        const grassW = tx > 0 && this.mapData[ty][tx - 1] === TILE.GRASS;
+        const grassE = tx < MAP_WIDTH_TILES - 1 && this.mapData[ty][tx + 1] === TILE.GRASS;
+        if (!grassN && !grassS && !grassW && !grassE) continue;
+        if (rng.frac() > 0.55) continue;
+        const variant = rng.between(1, 4);
+        const cx = tx * TILE_SIZE + TILE_SIZE / 2;
+        const cy = ty * TILE_SIZE + TILE_SIZE / 2;
+        // Push the rock toward the grass-side neighbour so it visibly sits
+        // on the boundary, breaking the right-angle shoreline.
+        let ox = 0;
+        let oy = 0;
+        if (grassN) oy -= TILE_SIZE * 0.35;
+        if (grassS) oy += TILE_SIZE * 0.35;
+        if (grassW) ox -= TILE_SIZE * 0.35;
+        if (grassE) ox += TILE_SIZE * 0.35;
+        ox += (rng.frac() - 0.5) * 14;
+        oy += (rng.frac() - 0.5) * 14;
+        this.add
+          .sprite(cx + ox, cy + oy, `water_rock_${variant}`)
+          .setOrigin(0.5, 0.7)
+          .setDepth(cy + oy)
+          .setScale(0.7);
+      }
     }
   }
 

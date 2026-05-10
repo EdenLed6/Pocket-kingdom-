@@ -117,6 +117,8 @@ export class Worker {
       return;
     }
     if (this.inventoryAmount > 0 && this.inventoryResource !== node.resource) {
+      // Wrong cargo: drop off first, then come back to THIS specific node.
+      this.pendingNodeAfterDeposit = node;
       this.startMoveToDropoff(null);
       return;
     }
@@ -168,6 +170,10 @@ export class Worker {
   }
 
   private pendingFarmAfterDeposit: Building | null = null;
+  // When the player taps a specific node but the worker has wrong cargo,
+  // we route them to drop off first, then return to THIS node (not just
+  // the nearest one) so the explicit tap is honoured.
+  private pendingNodeAfterDeposit: ResourceNode | null = null;
 
   private startMoveToFarm(farm: Building): void {
     const path = this.computePath(farm.interactionTile);
@@ -358,8 +364,19 @@ export class Worker {
       if (this.pendingFarmAfterDeposit && this.inventoryAmount === 0) {
         const farm = this.pendingFarmAfterDeposit;
         this.pendingFarmAfterDeposit = null;
+        this.pendingNodeAfterDeposit = null;
         this.startMoveToFarm(farm);
         return;
+      }
+      // Honour an explicit "go to this specific node" tap that we deferred
+      // because the worker had wrong cargo.
+      if (this.pendingNodeAfterDeposit && this.inventoryAmount === 0) {
+        const target = this.pendingNodeAfterDeposit;
+        this.pendingNodeAfterDeposit = null;
+        if (target.isAvailable) {
+          this.startMoveToNode(target);
+          return;
+        }
       }
       if (afterNode && afterNode.isAvailable && this.inventoryAmount === 0) {
         this.startMoveToNode(afterNode);
@@ -396,6 +413,7 @@ export class Worker {
     this.autoMode = null;
     this.autoResource = null;
     this.pendingFarmAfterDeposit = null;
+    this.pendingNodeAfterDeposit = null;
     if (this.inventoryAmount > 0) {
       this.startMoveToDropoff(null);
     } else {

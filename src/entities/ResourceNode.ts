@@ -76,8 +76,13 @@ export class ResourceNode {
   private cfg: NodeConfig;
   private treeVariant: number;
   private sprite: Phaser.GameObjects.Sprite;
+  private berries: Phaser.GameObjects.Sprite | null = null;
   private scene: Phaser.Scene;
   private remaining: number;
+  // Visible position with deterministic jitter so adjacent same-kind nodes
+  // don't land on a visible tile grid. Pathfinding still aims at worldX/Y.
+  private visX: number;
+  private visY: number;
 
   constructor(scene: Phaser.Scene, kind: NodeKind, tileX: number, tileY: number) {
     this.scene = scene;
@@ -95,13 +100,32 @@ export class ResourceNode {
     this.treeVariant = kind === 'tree' ? Phaser.Math.Between(1, 4) : 1;
     const initialKey = kind === 'tree' ? `tree_v${this.treeVariant}` : this.cfg.textureKey;
 
+    // Per-tile deterministic jitter so the cluster doesn't read as a
+    // pixel-perfect grid. ±11 px x, ±9 px y is enough to break alignment
+    // without overlapping resource neighbours.
+    const h1 = ((tileX * 73856093) ^ (tileY * 19349663)) >>> 0;
+    const h2 = ((tileX * 83492791) ^ (tileY * 32452843)) >>> 0;
+    const jitterX = ((h1 % 1000) / 1000) * 22 - 11;
+    const jitterY = ((h2 % 1000) / 1000) * 18 - 9;
+    this.visX = this.worldX + jitterX;
+    this.visY = this.worldY + jitterY;
+
     this.sprite = scene.add
-      .sprite(this.worldX, this.worldY, initialKey)
+      .sprite(this.visX, this.visY, initialKey)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
       .setScale(this.cfg.scale)
-      .setDepth(this.worldY)
+      .setDepth(this.visY)
       .setInteractive({ useHandCursor: true });
     this.sprite.setData('kind', 'node').setData('node', this);
+
+    // Bushes get a small red-berry overlay so they read as fruit bushes.
+    if (kind === 'bush') {
+      this.berries = scene.add
+        .sprite(this.visX, this.visY - 6, 'bush_berries')
+        .setOrigin(0.5, 0.7)
+        .setScale(0.55)
+        .setDepth(this.visY + 0.5);
+    }
   }
 
   get isAvailable(): boolean {
@@ -118,6 +142,26 @@ export class ResourceNode {
   }
 
   private deplete(): void {
+    this.sprite.disableInteractive();
+    // Trees actually FALL: tilt rotation + drop slightly before swapping
+    // to a stump. Eden's request: "the tree should fall when chopped".
+    if (this.kind === 'tree') {
+      this.scene.tweens.add({
+        targets: this.sprite,
+        angle: -45,
+        y: this.sprite.y + 6,
+        duration: 450,
+        ease: 'Cubic.in',
+        onComplete: () => this.swapToDepleted(),
+      });
+      return;
+    }
+    this.swapToDepleted();
+  }
+
+  private swapToDepleted(): void {
+    // Reset the rotation that the fall tween left.
+    this.sprite.setAngle(0).setPosition(this.visX, this.visY);
     if (this.kind === 'tree') {
       this.sprite.setTexture(`stump_v${this.treeVariant}`).setOrigin(0.5, 0.85).setAlpha(1);
     } else if (this.cfg.stumpTextureKey) {
@@ -125,7 +169,7 @@ export class ResourceNode {
     } else {
       this.sprite.setVisible(false);
     }
-    this.sprite.disableInteractive();
+    if (this.berries) this.berries.setVisible(false);
     if (this.cfg.regrowSec > 0) {
       this.scene.time.delayedCall(this.cfg.regrowSec * 1000, () => this.regrow());
     }
@@ -143,11 +187,15 @@ export class ResourceNode {
       .setTexture(key)
       .setOrigin(this.cfg.origin[0], this.cfg.origin[1])
       .setAlpha(1)
+      .setAngle(0)
+      .setPosition(this.visX, this.visY)
       .setVisible(true)
       .setInteractive({ useHandCursor: true });
+    if (this.berries) this.berries.setVisible(true);
   }
 
   destroy(): void {
     this.sprite.destroy();
+    if (this.berries) this.berries.destroy();
   }
 }

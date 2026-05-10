@@ -54,6 +54,12 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('rock', 'assets/sprites/ts/resources/rock1.png');
     this.load.spritesheet('bush', 'assets/sprites/ts/resources/bush.png', SQUARE_128);
     this.load.spritesheet('deer', 'assets/sprites/ts/resources/sheep_idle.png', SQUARE_128);
+    // Shore decorations to soften the staircase look at lake edges.
+    for (let n = 1; n <= 4; n++) {
+      const key = `water_rock_${n}`;
+      const file = `assets/sprites/ts/resources/water_rock_0${n}.png`;
+      this.load.spritesheet(key, file, { frameWidth: 64, frameHeight: 64 });
+    }
   }
 
   create(): void {
@@ -197,6 +203,30 @@ export class PreloadScene extends Phaser.Scene {
     this.makeRoadIcon();
     this.makeStumpFallback();
     this.makeBushBare();
+    this.makeBushBerries();
+  }
+
+  // Tiny Swords bushes are berry-less greens; we overlay this small image
+  // on top of each bush ResourceNode so the player can read them as
+  // berry / fruit bushes per Eden's request.
+  private makeBushBerries(): void {
+    const W = 36;
+    const H = 24;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // 6 random red dots clumped in the upper half.
+    const points: [number, number][] = [
+      [10, 8], [16, 5], [22, 9], [12, 13], [20, 14], [26, 12],
+    ];
+    for (const [x, y] of points) {
+      g.fillStyle(0x4a0a0a, 1);
+      g.fillRect(x - 1, y - 1, 4, 4); // dark outline
+      g.fillStyle(0xd02838, 1);
+      g.fillRect(x, y, 2, 2); // berry body
+      g.fillStyle(0xff6878, 1);
+      g.fillRect(x, y, 1, 1); // highlight
+    }
+    g.generateTexture('bush_berries', W, H);
+    g.destroy();
   }
 
   private makeSelectRing(): void {
