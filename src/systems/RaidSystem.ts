@@ -4,6 +4,7 @@ import { MAP_HEIGHT_TILES, MAP_WIDTH_TILES } from '../data/tiles';
 import type { UnitId } from '../data/units';
 import { AudioSystem } from './AudioSystem';
 import { JuiceSystem } from './JuiceSystem';
+import { DayNightSystem } from './DayNightSystem';
 
 export type BanditId = Extract<UnitId, 'bandit_grunt' | 'bandit_archer' | 'bandit_raider'>;
 
@@ -85,7 +86,10 @@ export class RaidSystem {
       }
     }
 
-    let pRaid = Math.floor(pPlayer * mult);
+    // Night bias (stretch §12 day/night): raids hit harder in the dark.
+    // 0.8 at noon ramping up to 1.4 at midnight, smooth across dawn/dusk.
+    const nightMult = DayNightSystem.raidPowerMultiplier();
+    let pRaid = Math.floor(pPlayer * mult * nightMult);
     pRaid = Math.max(BALANCE.raid.minPower, pRaid);
     const cap = Math.floor(pPlayer * BALANCE.raid.powerCapMultiplier);
     if (cap > 0) pRaid = Math.min(cap, pRaid);

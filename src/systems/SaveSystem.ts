@@ -62,6 +62,8 @@ export interface SaveData {
   // Optional so older saves (without this field) still load — TechSystem
   // handles missing input by clearing.
   unlockedTechs?: string[];
+  // Day/night sim state. Optional for backward compat with pre-cycle saves.
+  dayNight?: { timeSec: number; dayCount: number };
 }
 
 // Pure module — no constructor needed. GameScene calls these directly.

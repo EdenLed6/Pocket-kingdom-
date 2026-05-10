@@ -18,6 +18,7 @@ import { AudioSystem } from '../systems/AudioSystem';
 import { JuiceSystem, JUICE_COLORS } from '../systems/JuiceSystem';
 import { TechSystem } from '../systems/TechSystem';
 import { TECH_DEFS, type TechId } from '../data/tech';
+import { DayNightSystem } from '../systems/DayNightSystem';
 import {
   SaveSystem,
   SAVE_VERSION,
@@ -108,6 +109,21 @@ export class GameScene extends Phaser.Scene {
     const worldW = MAP_WIDTH_TILES * TILE_SIZE;
     const worldH = MAP_HEIGHT_TILES * TILE_SIZE;
     this.cameras.main.setBounds(0, 0, worldW, worldH);
+
+    // Night overlay: viewport-sized navy veil whose alpha tracks the
+    // DayNightSystem. depth 800 puts it above world sprites (so they
+    // appear dimmed at night) but below JuiceSystem particle bursts at
+    // depth 1000 (so sparks remain bright in the dark).
+    this.nightOverlay = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x0a1030, 0)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(800);
+    this.scale.on('resize', () => {
+      if (this.nightOverlay) {
+        this.nightOverlay.setSize(this.scale.width, this.scale.height);
+      }
+    });
 
     // mapData starts all-grass (regenerated). Mark every tile that falls
     // inside a lake polygon as WATER, then render water + future painted
@@ -201,6 +217,17 @@ export class GameScene extends Phaser.Scene {
     for (const w of this.workers) w.update(dt);
     for (const u of this.units) if (u.isAlive) u.update(dt);
     this.tickTowers(dt);
+    DayNightSystem.update(dt);
+    this.updateNightOverlay();
+  }
+
+  private nightOverlay: Phaser.GameObjects.Rectangle | null = null;
+  private updateNightOverlay(): void {
+    if (!this.nightOverlay) return;
+    // Cap at 0.55 — pure black night kills readability of unit colors;
+    // a 55% navy veil reads clearly as "night" while keeping play legible.
+    const darkness = (1 - DayNightSystem.daylight()) * 0.55;
+    this.nightOverlay.setAlpha(darkness);
   }
 
   // Per-tower cooldown so multiple towers fire independently. Keyed by
@@ -813,6 +840,7 @@ export class GameScene extends Phaser.Scene {
 
   private spawnFresh(): void {
     TechSystem.reset();
+    DayNightSystem.reset();
     this.spawnTownHall();
     this.spawnNodes();
     this.spawnWorkers();
@@ -834,6 +862,7 @@ export class GameScene extends Phaser.Scene {
     // 0. Hydrate techs FIRST so the buildings/units we restore below see the
     //    correct multipliers when their constructors run.
     TechSystem.hydrate(snap.unlockedTechs as TechId[] | undefined);
+    DayNightSystem.hydrate(snap.dayNight);
 
     // 1. Re-paint mapData with the player's painted tiles (water channels +
     //    dirt paths). Lake water was already marked by markLakeWater().
@@ -952,6 +981,7 @@ export class GameScene extends Phaser.Scene {
       nodes: this.nodes.map((n) => n.snapshot()),
       paintedTiles: painted,
       unlockedTechs: TechSystem.serialize(),
+      dayNight: DayNightSystem.serialize(),
     };
   }
 

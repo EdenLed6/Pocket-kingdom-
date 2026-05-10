@@ -6,6 +6,7 @@ import { AudioSystem } from '../systems/AudioSystem';
 import { TechSystem } from '../systems/TechSystem';
 import { TECH_DEFS, TECH_ORDER, type TechId } from '../data/tech';
 import type { ResourceType } from '../data/balance';
+import { DayNightSystem } from '../systems/DayNightSystem';
 
 const HUD_FONT = {
   fontFamily: 'ui-monospace, monospace',
@@ -48,6 +49,8 @@ export class UIScene extends Phaser.Scene {
   private paintModeLabel: Phaser.GameObjects.Text | null = null;
   private drawer: Phaser.GameObjects.Container | null = null;
   private cards: BuildCard[] = [];
+  private clockDot!: Phaser.GameObjects.Arc;
+  private clockText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('UI');
@@ -76,6 +79,26 @@ export class UIScene extends Phaser.Scene {
       const line: ResourceLine = { ...d, text };
       this.lines.push(line);
       this.refreshLine(line);
+    });
+
+    // Day/night clock chip — small circle (color tracks phase) + "Day N"
+    // / "Night N" label. Sits below the HUD bar at top-left. Polled from
+    // DayNightSystem via a 1 Hz timer (slow cycle, no need to update every
+    // frame).
+    this.clockDot = this.add
+      .circle(14, 50, 6, 0xffd060, 1)
+      .setDepth(1001)
+      .setScrollFactor(0)
+      .setStrokeStyle(1, 0xffffff);
+    this.clockText = this.add
+      .text(26, 44, '', { ...HUD_FONT, fontSize: '13px' })
+      .setDepth(1001)
+      .setScrollFactor(0);
+    this.refreshClock();
+    this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => this.refreshClock(),
     });
 
     // Pause button — hamburger glyph at top-right of the HUD bar.
@@ -680,6 +703,19 @@ export class UIScene extends Phaser.Scene {
     if (!this.placementBanner) return;
     this.placementBanner.destroy();
     this.placementBanner = null;
+  }
+
+  private refreshClock(): void {
+    if (!this.clockDot || !this.clockText) return;
+    const phase = DayNightSystem.phase();
+    const day = DayNightSystem.dayCountValue();
+    const color =
+      phase === 'day'   ? 0xffd060 :
+      phase === 'night' ? 0x4060c0 :
+      /* dawn/dusk */     0xff9050;
+    this.clockDot.setFillStyle(color, 1);
+    const labelByPhase = { day: 'Day', night: 'Night', dawn: 'Dawn', dusk: 'Dusk' } as const;
+    this.clockText.setText(`${labelByPhase[phase]} ${day}`);
   }
 
   // Brief top-right chip that fades in/out, used for both manual saves and
