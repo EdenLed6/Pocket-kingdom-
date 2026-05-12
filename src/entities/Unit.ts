@@ -330,11 +330,22 @@ export class Unit {
       return;
     }
     this.path = [];
+    let lastDx = 0;
+    let lastDy = 0;
     for (let i = 1; i < path.length; i++) {
-      this.path.push({
+      const dx = path[i].tx - path[i - 1].tx;
+      const dy = path[i].ty - path[i - 1].ty;
+      const point = {
         x: path[i].tx * TILE_SIZE + TILE_SIZE / 2,
         y: path[i].ty * TILE_SIZE + TILE_SIZE / 2,
-      });
+      };
+      if (i > 1 && dx === lastDx && dy === lastDy) {
+        this.path[this.path.length - 1] = point;
+      } else {
+        this.path.push(point);
+      }
+      lastDx = dx;
+      lastDy = dy;
     }
   }
 
