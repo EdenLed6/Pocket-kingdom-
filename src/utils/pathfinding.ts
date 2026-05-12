@@ -15,11 +15,15 @@ interface Node {
   parent: Node | null;
 }
 
-const DIRS: ReadonlyArray<readonly [number, number]> = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
+const DIRS: ReadonlyArray<readonly [number, number, number]> = [
+  [1, 0, 1],
+  [-1, 0, 1],
+  [0, 1, 1],
+  [0, -1, 1],
+  [1, 1, Math.SQRT2],
+  [1, -1, Math.SQRT2],
+  [-1, 1, Math.SQRT2],
+  [-1, -1, Math.SQRT2],
 ];
 
 function key(tx: number, ty: number): number {
@@ -27,8 +31,12 @@ function key(tx: number, ty: number): number {
   return ty * 4096 + tx;
 }
 
-function manhattan(ax: number, ay: number, bx: number, by: number): number {
-  return Math.abs(ax - bx) + Math.abs(ay - by);
+function octile(ax: number, ay: number, bx: number, by: number): number {
+  const dx = Math.abs(ax - bx);
+  const dy = Math.abs(ay - by);
+  const minD = Math.min(dx, dy);
+  const maxD = Math.max(dx, dy);
+  return minD * Math.SQRT2 + (maxD - minD);
 }
 
 // Returns a list of tile coords from start to goal (inclusive), or null if no
@@ -54,7 +62,7 @@ export function findPath(
     tx: start.tx,
     ty: start.ty,
     g: 0,
-    f: manhattan(start.tx, start.ty, goal.tx, goal.ty),
+    f: octile(start.tx, start.ty, goal.tx, goal.ty),
     parent: null,
   };
   open.set(key(start.tx, start.ty), startNode);
@@ -84,7 +92,7 @@ export function findPath(
     open.delete(bestKey);
     closed.add(bestKey);
 
-    for (const [dx, dy] of DIRS) {
+    for (const [dx, dy, stepCost] of DIRS) {
       const nx = best.tx + dx;
       const ny = best.ty + dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
@@ -93,14 +101,14 @@ export function findPath(
       // Goal is allowed to be unwalkable (target).
       const isGoal = nx === goal.tx && ny === goal.ty;
       if (!isGoal && !isWalkable(nx, ny)) continue;
-      const tentativeG = best.g + 1;
+      const tentativeG = best.g + stepCost;
       const existing = open.get(nKey);
       if (existing && tentativeG >= existing.g) continue;
       const node: Node = {
         tx: nx,
         ty: ny,
         g: tentativeG,
-        f: tentativeG + manhattan(nx, ny, goal.tx, goal.ty),
+        f: tentativeG + octile(nx, ny, goal.tx, goal.ty),
         parent: best,
       };
       open.set(nKey, node);

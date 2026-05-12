@@ -72,6 +72,7 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     this.generateTerrainTexture();
+    this.generateUniquePixelArtSet();
     this.generateProceduralUiTextures();
     this.registerAnimations();
     this.scene.start('Game');
@@ -204,6 +205,48 @@ export class PreloadScene extends Phaser.Scene {
     g.destroy();
   }
 
+
+  private generateUniquePixelArtSet(): void {
+    const mk = (key: string, w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void): void => {
+      if (this.textures.exists(key)) this.textures.remove(key);
+      const tex = this.textures.createCanvas(key, w, h);
+      if (!tex) return;
+      const ctx = tex.getContext();
+      ctx.clearRect(0, 0, w, h);
+      ctx.imageSmoothingEnabled = false;
+      draw(ctx);
+      tex.refresh();
+    };
+    const rect = (ctx: CanvasRenderingContext2D, x:number,y:number,w:number,h:number,c:string): void => { ctx.fillStyle = c; ctx.fillRect(x,y,w,h); };
+
+    const building = (key:string, base:string, roof:string): void => mk(key,192,192,(ctx)=>{
+      rect(ctx,34,92,124,76,base);
+      ctx.fillStyle=roof; ctx.beginPath(); ctx.moveTo(24,92); ctx.lineTo(96,38); ctx.lineTo(168,92); ctx.fill();
+      rect(ctx,84,120,26,48,'#5c3f2d'); rect(ctx,50,112,18,16,'#b7d8ef'); rect(ctx,124,112,18,16,'#b7d8ef');
+    });
+
+    const tree = (key:string, leaf:string): void => mk(key,192,256,(ctx)=>{
+      rect(ctx,90,162,12,70,'#6c4c2e');
+      ctx.fillStyle=leaf; ctx.beginPath(); ctx.arc(96,140,54,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(96,102,38,0,Math.PI*2); ctx.fill();
+    });
+
+    const rock=(key:string,c:string)=>mk(key,64,64,(ctx)=>{ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(10,44);ctx.lineTo(18,22);ctx.lineTo(34,14);ctx.lineTo(50,22);ctx.lineTo(56,40);ctx.lineTo(42,54);ctx.lineTo(20,52);ctx.fill();});
+
+    // Buildings
+    building('b_town_hall','#7f899a','#5e76b5'); building('b_house','#a68562','#b45f4d');
+    building('b_lumber_mill','#9f7e58','#8f5b36'); building('b_quarry','#8f96a3','#666f7f');
+    building('b_farm','#acacb2','#737ca4'); building('b_hunters_lodge','#9f815e','#7e523a');
+    building('b_barracks','#818999','#86534d');
+    mk('b_tower',192,192,(ctx)=>{rect(ctx,70,52,52,116,'#8d95a3');rect(ctx,62,38,68,20,'#666d79');});
+    building('b_warehouse','#9b7b63','#a84f49');
+
+    // Resources
+    tree('tree_v1','#3f8f47'); tree('tree_v2','#367f3f'); tree('tree_v3','#4d9a54'); tree('tree_v4','#63aa64');
+    for (let i=1;i<=4;i++) mk(`stump_v${i}`,64,64,(ctx)=>{ctx.fillStyle='#8e633f';ctx.beginPath();ctx.ellipse(32,36,20,12,0,0,Math.PI*2);ctx.fill();rect(ctx,16,18,32,18,'#7c5433');});
+    rock('rock_v1','#7f8997'); rock('rock_v2','#6f7d8a'); rock('rock_v3','#96a1b0');
+    mk('bush',64,64,(ctx)=>{ctx.fillStyle='#4f9e58';ctx.beginPath();ctx.arc(32,36,24,0,Math.PI*2);ctx.fill();rect(ctx,20,34,3,3,'#b82f43');rect(ctx,31,29,3,3,'#b82f43');rect(ctx,41,39,3,3,'#b82f43');});
+  }
   private generateProceduralUiTextures(): void {
     this.makeSelectRing();
     this.makeWall();
