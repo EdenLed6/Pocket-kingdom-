@@ -603,11 +603,24 @@ function verbForResource(r: ResourceType, mode: 'going' | 'doing'): string {
 
 function pathToWaypoints(path: TileXY[]): { x: number; y: number }[] {
   const waypoints: { x: number; y: number }[] = [];
+  let lastDx = 0;
+  let lastDy = 0;
   for (let i = 1; i < path.length; i++) {
-    waypoints.push({
-      x: path[i].tx * TILE_SIZE + TILE_SIZE / 2,
-      y: path[i].ty * TILE_SIZE + TILE_SIZE / 2,
-    });
+    const dx = path[i].tx - path[i - 1].tx;
+    const dy = path[i].ty - path[i - 1].ty;
+    if (i > 1 && dx === lastDx && dy === lastDy) {
+      waypoints[waypoints.length - 1] = {
+        x: path[i].tx * TILE_SIZE + TILE_SIZE / 2,
+        y: path[i].ty * TILE_SIZE + TILE_SIZE / 2,
+      };
+    } else {
+      waypoints.push({
+        x: path[i].tx * TILE_SIZE + TILE_SIZE / 2,
+        y: path[i].ty * TILE_SIZE + TILE_SIZE / 2,
+      });
+    }
+    lastDx = dx;
+    lastDy = dy;
   }
   return waypoints;
 }
